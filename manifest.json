@@ -1,9 +1,13 @@
 {
   "manifest_version": 3,
   "name": "Pool Ball Color Restoration",
-  "version": "1.7",
+  "version": "1.10",
   "description": "Restores the hated purple 5-ball back to its rightful historical orange.",
-  "permissions": ["activeTab", "scripting"],
+  "permissions": ["storage", "activeTab"],
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "Pool Color Restorer"
+  },
   "content_scripts": [
     {
       "matches": ["<all_urls>"],

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Pool Color Restorer</title>
+  <link rel="stylesheet" href="popup.css" />
+</head>
+<body>
+  <header>
+    <h1>Pool Color</h1>
+    <label class="toggle">
+      <input type="checkbox" id="enabled" checked />
+      <span>On</span>
+    </label>
+  </header>
+
+  <p class="hint">Compare with Off to judge the original stream colours.</p>
+
+  <section>
+    <h2>Purple -> orange (5-ball)</h2>
+    <label>
+      Saturation
+      <input type="range" id="orangeSat" min="0.3" max="1" step="0.01" />
+      <output id="orangeSatOut"></output>
+    </label>
+    <label>
+      Detection sensitivity
+      <input type="range" id="orangeSense" min="0" max="1" step="0.01" />
+      <output id="orangeSenseOut"></output>
+    </label>
+  </section>
+
+  <section>
+    <h2>Pink → purple (4-ball)</h2>
+    <label>
+      Saturation
+      <input type="range" id="pinkSat" min="0.2" max="1" step="0.01" />
+      <output id="pinkSatOut"></output>
+    </label>
+    <label>
+      Detection sensitivity
+      <input type="range" id="pinkSense" min="0" max="1" step="0.01" />
+      <output id="pinkSenseOut"></output>
+    </label>
+  </section>
+
+  <footer>
+    <button type="button" id="reset">Reset defaults</button>
+  </footer>
+
+  <script src="popup.js"></script>
+</body>
+</html>
