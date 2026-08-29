@@ -1,17 +1,14 @@
 {
   "manifest_version": 3,
   "name": "Pool Ball Color Restoration",
-  "version": "1.0",
-  "description": "Restores the hated purple 5-ball back to its rightful historical orange on pool streaming sites.",
+  "version": "1.2",
+  "description": "Restores the hated purple 5-ball back to its rightful historical orange.",
   "permissions": ["activeTab", "scripting"],
   "content_scripts": [
     {
-      "matches": [
-        "*://*://*", 
-        "*://*.matchroom.live/*", 
-        "*://*://*"
-      ],
+      "matches": ["<all_urls>"],
       "js": ["content.js"]
     }
   ]
 }
+
