@@ -6,100 +6,129 @@
     return;
   }
 
-  // Tunable via console: window.__poolColor.config
+  // Tunable: window.__poolColor.config
   const config = {
-    orangeHue: 28,
-    orangeSat: 0.55,
-    orangeSatBoost: 1.5,
-    purpleHue: 280,
-    mauveSatMax: 0.42,
+    orangeHue: 28 / 360,
+    orangeSatFloor: 0.55,
+    purpleHue: 280 / 360,
     mauveSatMin: 0.06,
+    mauveSatMax: 0.42,
     pinkSatMin: 0.22,
-    // Mauve (5) has elevated G&B vs pure red (3). Pure red g/r ≈ 0.15–0.25.
     mauveMinChannelRatio: 0.45,
-    // Process at this max width (display is upscaled) — biggest FPS win
-    processMaxWidth: 480,
   };
 
-  function rgbToHsl(r, g, b) {
-    r /= 255; g /= 255; b /= 255;
-    const max = Math.max(r, g, b), min = Math.min(r, g, b);
-    const l = (max + min) / 2;
-    if (max === min) return [0, 0, l];
-    const d = max - min;
-    const s = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-    let h;
-    switch (max) {
-      case r: h = ((g - b) / d + (g < b ? 6 : 0)); break;
-      case g: h = ((b - r) / d + 2); break;
-      default: h = ((r - g) / d + 4); break;
+  const VERT = `
+    attribute vec2 a_pos;
+    varying vec2 v_uv;
+    void main() {
+      v_uv = vec2(a_pos.x * 0.5 + 0.5, 1.0 - (a_pos.y * 0.5 + 0.5));
+      gl_Position = vec4(a_pos, 0.0, 1.0);
     }
-    return [h * 60, s, l];
-  }
+  `;
 
-  function hslToRgb(h, s, l) {
-    h = ((h % 360) + 360) % 360;
-    const c = (1 - Math.abs(2 * l - 1)) * s;
-    const x = c * (1 - Math.abs((h / 60) % 2 - 1));
-    const m = l - c / 2;
-    let rp, gp, bp;
-    if (h < 60) [rp, gp, bp] = [c, x, 0];
-    else if (h < 120) [rp, gp, bp] = [x, c, 0];
-    else if (h < 180) [rp, gp, bp] = [0, c, x];
-    else if (h < 240) [rp, gp, bp] = [0, x, c];
-    else if (h < 300) [rp, gp, bp] = [x, 0, c];
-    else [rp, gp, bp] = [c, 0, x];
-    return [
-      Math.round((rp + m) * 255),
-      Math.round((gp + m) * 255),
-      Math.round((bp + m) * 255),
-    ];
-  }
+  // Selective remap on GPU: violet/mauve → orange, magenta/pink → purple
+  const FRAG = `
+    precision mediump float;
+    varying vec2 v_uv;
+    uniform sampler2D u_tex;
+    uniform float u_orangeHue;
+    uniform float u_orangeSatFloor;
+    uniform float u_purpleHue;
+    uniform float u_mauveSatMin;
+    uniform float u_mauveSatMax;
+    uniform float u_pinkSatMin;
+    uniform float u_mauveRatio;
 
-  function remapPixel(r, g, b) {
-    // Fast reject: not in red/magenta/violet family
-    if (r < 40 && b < 40) return [r, g, b];
-
-    const [h, s, l] = rgbToHsl(r, g, b);
-    if (s < 0.05 || l < 0.08 || l > 0.92) return [r, g, b];
-
-    const inViolet = h >= 250 && h < 295;
-    const inMagenta = h >= 295 && h < 340;
-    const inRoseArc = h >= 330 || h < 25;
-
-    // Classic violet → orange
-    if (inViolet && s > 0.1) {
-      const sat = Math.min(1, Math.max(s * config.orangeSatBoost, config.orangeSat));
-      return hslToRgb(config.orangeHue, sat, l);
+    vec3 rgb2hsl(vec3 c) {
+      float maxc = max(max(c.r, c.g), c.b);
+      float minc = min(min(c.r, c.g), c.b);
+      float l = (maxc + minc) * 0.5;
+      if (maxc == minc) return vec3(0.0, 0.0, l);
+      float d = maxc - minc;
+      float s = l > 0.5 ? d / (2.0 - maxc - minc) : d / (maxc + minc);
+      float h;
+      if (maxc == c.r) h = (c.g - c.b) / d + (c.g < c.b ? 6.0 : 0.0);
+      else if (maxc == c.g) h = (c.b - c.r) / d + 2.0;
+      else h = (c.r - c.g) / d + 4.0;
+      return vec3(h / 6.0, s, l);
     }
 
-    // True magenta / hot pink (4) → purple. Do NOT use the near-red rose arc
-    // for pink→purple — that was turning the solid red 3-ball purple.
-    if (inMagenta && s >= config.pinkSatMin && b > g) {
-      return hslToRgb(config.purpleHue, Math.min(1, s * 1.1), l);
+    float hue2rgb(float p, float q, float t) {
+      if (t < 0.0) t += 1.0;
+      if (t > 1.0) t -= 1.0;
+      if (t < 1.0/6.0) return p + (q - p) * 6.0 * t;
+      if (t < 0.5) return q;
+      if (t < 2.0/3.0) return p + (q - p) * (2.0/3.0 - t) * 6.0;
+      return p;
     }
 
-    // Dusty mauve / TV purple 5 → orange.
-    // #996869 has g/r ≈ b/r ≈ 0.68; pure red has g/r ≈ 0.2.
-    if (inRoseArc && s >= config.mauveSatMin && s < config.mauveSatMax) {
-      const ratio = config.mauveMinChannelRatio;
-      if (r > 0 && g / r >= ratio && b / r >= ratio && b >= g * 0.9) {
-        const sat = Math.min(1, Math.max(s * config.orangeSatBoost, config.orangeSat));
-        return hslToRgb(config.orangeHue, sat, l);
+    vec3 hsl2rgb(vec3 hsl) {
+      float h = hsl.x, s = hsl.y, l = hsl.z;
+      if (s == 0.0) return vec3(l);
+      float q = l < 0.5 ? l * (1.0 + s) : l + s - l * s;
+      float p = 2.0 * l - q;
+      return vec3(hue2rgb(p, q, h + 1.0/3.0), hue2rgb(p, q, h), hue2rgb(p, q, h - 1.0/3.0));
+    }
+
+    void main() {
+      vec4 tex = texture2D(u_tex, v_uv);
+      vec3 c = tex.rgb;
+      vec3 hsl = rgb2hsl(c);
+      float h = hsl.x;
+      float s = hsl.y;
+      float l = hsl.z;
+
+      if (s < 0.05 || l < 0.08 || l > 0.92) {
+        gl_FragColor = tex;
+        return;
       }
-    }
 
-    return [r, g, b];
-  }
+      bool inViolet = h >= 0.694 && h < 0.820;   // 250–295°
+      bool inMagenta = h >= 0.820 && h < 0.944;  // 295–340°
+      bool inRose = h >= 0.917 || h < 0.069;     // 330–25°
 
-  function processImageData(imageData) {
-    const d = imageData.data;
-    for (let i = 0; i < d.length; i += 4) {
-      const [nr, ng, nb] = remapPixel(d[i], d[i + 1], d[i + 2]);
-      d[i] = nr;
-      d[i + 1] = ng;
-      d[i + 2] = nb;
+      vec3 outc = c;
+
+      if (inViolet && s > 0.1) {
+        float sat = max(s * 1.5, u_orangeSatFloor);
+        outc = hsl2rgb(vec3(u_orangeHue, min(sat, 1.0), l));
+      } else if (inMagenta && s >= u_pinkSatMin && c.b > c.g) {
+        outc = hsl2rgb(vec3(u_purpleHue, min(s * 1.1, 1.0), l));
+      } else if (inRose && s >= u_mauveSatMin && s < u_mauveSatMax) {
+        // Dusty mauve 5 vs pure red 3: require elevated g/r and b/r
+        if (c.r > 0.01 && c.g / c.r >= u_mauveRatio && c.b / c.r >= u_mauveRatio && c.b >= c.g * 0.9) {
+          float sat = max(s * 1.5, u_orangeSatFloor);
+          outc = hsl2rgb(vec3(u_orangeHue, min(sat, 1.0), l));
+        }
+      }
+
+      gl_FragColor = vec4(outc, tex.a);
     }
+  `;
+
+  function createProgram(gl, vsSrc, fsSrc) {
+    function compile(type, src) {
+      const sh = gl.createShader(type);
+      gl.shaderSource(sh, src);
+      gl.compileShader(sh);
+      if (!gl.getShaderParameter(sh, gl.COMPILE_STATUS)) {
+        console.error(gl.getShaderInfoLog(sh));
+        return null;
+      }
+      return sh;
+    }
+    const vs = compile(gl.VERTEX_SHADER, vsSrc);
+    const fs = compile(gl.FRAGMENT_SHADER, fsSrc);
+    if (!vs || !fs) return null;
+    const prog = gl.createProgram();
+    gl.attachShader(prog, vs);
+    gl.attachShader(prog, fs);
+    gl.linkProgram(prog);
+    if (!gl.getProgramParameter(prog, gl.LINK_STATUS)) {
+      console.error(gl.getProgramInfoLog(prog));
+      return null;
+    }
+    return prog;
   }
 
   function findVideosInShadow(root) {
@@ -118,72 +147,116 @@
 
     const parent = video.parentNode;
     if (!parent) return;
-
     parent.querySelectorAll('[data-pool-color-canvas]').forEach(c => c.remove());
 
-    const display = document.createElement('canvas');
-    display.dataset.poolColorCanvas = '1';
-    display.style.cssText =
+    const canvas = document.createElement('canvas');
+    canvas.dataset.poolColorCanvas = '1';
+    canvas.style.cssText =
       'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;z-index:2';
 
-    if (getComputedStyle(parent).position === 'static') {
-      parent.style.position = 'relative';
-    }
-    parent.appendChild(display);
+    if (getComputedStyle(parent).position === 'static') parent.style.position = 'relative';
+    parent.appendChild(canvas);
     video.style.opacity = '0';
 
-    const displayCtx = display.getContext('2d');
-    const work = document.createElement('canvas');
-    const workCtx = work.getContext('2d', { willReadFrequently: true });
+    const gl = canvas.getContext('webgl', {
+      alpha: false,
+      antialias: false,
+      preserveDrawingBuffer: false,
+      powerPreference: 'high-performance',
+    });
+    if (!gl) {
+      console.warn('Pool color restorer: WebGL unavailable');
+      video.style.opacity = '';
+      return;
+    }
+
+    const prog = createProgram(gl, VERT, FRAG);
+    if (!prog) return;
+
+    const buf = gl.createBuffer();
+    gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+    gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([
+      -1, -1, 1, -1, -1, 1,
+      -1, 1, 1, -1, 1, 1,
+    ]), gl.STATIC_DRAW);
+
+    const aPos = gl.getAttribLocation(prog, 'a_pos');
+    const uTex = gl.getUniformLocation(prog, 'u_tex');
+    const locs = {
+      orangeHue: gl.getUniformLocation(prog, 'u_orangeHue'),
+      orangeSatFloor: gl.getUniformLocation(prog, 'u_orangeSatFloor'),
+      purpleHue: gl.getUniformLocation(prog, 'u_purpleHue'),
+      mauveSatMin: gl.getUniformLocation(prog, 'u_mauveSatMin'),
+      mauveSatMax: gl.getUniformLocation(prog, 'u_mauveSatMax'),
+      pinkSatMin: gl.getUniformLocation(prog, 'u_pinkSatMin'),
+      mauveRatio: gl.getUniformLocation(prog, 'u_mauveRatio'),
+    };
+
+    const tex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, tex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
 
     let running = true;
-    let srcW = 0, srcH = 0;
+    let lastW = 0, lastH = 0;
 
-    function tick() {
+    function draw() {
       if (!running || !video.isConnected) return;
 
       if (video.readyState >= 2 && video.videoWidth) {
-        try {
-          const vw = video.videoWidth;
-          const vh = video.videoHeight;
-          if (vw !== srcW || vh !== srcH) {
-            srcW = vw;
-            srcH = vh;
-            display.width = vw;
-            display.height = vh;
-            const scale = Math.min(1, config.processMaxWidth / vw);
-            work.width = Math.max(1, Math.round(vw * scale));
-            work.height = Math.max(1, Math.round(vh * scale));
-          }
+        const w = video.videoWidth;
+        const h = video.videoHeight;
+        if (w !== lastW || h !== lastH) {
+          canvas.width = w;
+          canvas.height = h;
+          gl.viewport(0, 0, w, h);
+          lastW = w;
+          lastH = h;
+        }
 
-          workCtx.drawImage(video, 0, 0, work.width, work.height);
-          const imageData = workCtx.getImageData(0, 0, work.width, work.height);
-          processImageData(imageData);
-          workCtx.putImageData(imageData, 0, 0);
-          displayCtx.imageSmoothingEnabled = true;
-          displayCtx.drawImage(work, 0, 0, display.width, display.height);
+        try {
+          gl.bindTexture(gl.TEXTURE_2D, tex);
+          gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
+
+          gl.useProgram(prog);
+          gl.bindBuffer(gl.ARRAY_BUFFER, buf);
+          gl.enableVertexAttribArray(aPos);
+          gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+
+          gl.uniform1i(uTex, 0);
+          gl.uniform1f(locs.orangeHue, config.orangeHue);
+          gl.uniform1f(locs.orangeSatFloor, config.orangeSatFloor);
+          gl.uniform1f(locs.purpleHue, config.purpleHue);
+          gl.uniform1f(locs.mauveSatMin, config.mauveSatMin);
+          gl.uniform1f(locs.mauveSatMax, config.mauveSatMax);
+          gl.uniform1f(locs.pinkSatMin, config.pinkSatMin);
+          gl.uniform1f(locs.mauveRatio, config.mauveMinChannelRatio);
+
+          gl.drawArrays(gl.TRIANGLES, 0, 6);
         } catch (e) {
-          if (!display.dataset.corsWarned) {
-            display.dataset.corsWarned = '1';
-            console.warn('Pool color restorer: canvas blocked (CORS).', e.message);
+          if (!canvas.dataset.corsWarned) {
+            canvas.dataset.corsWarned = '1';
+            console.warn('Pool color restorer: WebGL texture blocked.', e.message);
           }
         }
       }
 
       if (typeof video.requestVideoFrameCallback === 'function') {
-        video.requestVideoFrameCallback(tick);
+        video.requestVideoFrameCallback(draw);
       } else {
-        requestAnimationFrame(tick);
+        requestAnimationFrame(draw);
       }
     }
 
     if (typeof video.requestVideoFrameCallback === 'function') {
-      video.requestVideoFrameCallback(tick);
+      video.requestVideoFrameCallback(draw);
     } else {
-      requestAnimationFrame(tick);
+      requestAnimationFrame(draw);
     }
 
-    console.log('Color Engine Hooked: selective remap @ max', config.processMaxWidth + 'px');
+    console.log('Color Engine Hooked: WebGL selective remap');
     video.addEventListener('emptied', () => { running = false; }, { once: true });
   }
 
@@ -210,7 +283,7 @@
     console.log('Reset — original colors restored');
   }
 
-  window.__poolColor = { config, apply, reset, remapPixel };
+  window.__poolColor = { config, apply, reset };
 
   const observer = new MutationObserver(() => apply());
   observer.observe(document.documentElement, { childList: true, subtree: true });
