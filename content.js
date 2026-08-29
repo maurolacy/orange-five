@@ -6,17 +6,19 @@
     return;
   }
 
-  // Tunable via console: window.__poolColor.config = { ... }
+  // Tunable via console: window.__poolColor.config
   const config = {
-    orangeHue: 28,       // lower = redder orange, higher = yellower
-    orangeSat: 0.55,     // floor saturation for remapped orange (raise = punchier)
-    orangeSatBoost: 1.5, // multiply original sat before applying floor
+    orangeHue: 28,
+    orangeSat: 0.55,
+    orangeSatBoost: 1.5,
     purpleHue: 280,
-    // Dusty mauve / TV "purple" 5-ball → orange
     mauveSatMax: 0.42,
     mauveSatMin: 0.06,
-    // Hot pink 4-ball → purple
-    pinkSatMin: 0.28,
+    pinkSatMin: 0.22,
+    // Mauve (5) has elevated G&B vs pure red (3). Pure red g/r ≈ 0.15–0.25.
+    mauveMinChannelRatio: 0.45,
+    // Process at this max width (display is upscaled) — biggest FPS win
+    processMaxWidth: 480,
   };
 
   function rgbToHsl(r, g, b) {
@@ -55,32 +57,33 @@
   }
 
   function remapPixel(r, g, b) {
+    // Fast reject: not in red/magenta/violet family
+    if (r < 40 && b < 40) return [r, g, b];
+
     const [h, s, l] = rgbToHsl(r, g, b);
     if (s < 0.05 || l < 0.08 || l > 0.92) return [r, g, b];
 
-    const blueish = b >= g * 0.95;
-    const inRoseArc = h >= 320 || h < 30;
     const inViolet = h >= 250 && h < 295;
     const inMagenta = h >= 295 && h < 340;
+    const inRoseArc = h >= 330 || h < 25;
 
-    // Classic violet/purple → orange
+    // Classic violet → orange
     if (inViolet && s > 0.1) {
       const sat = Math.min(1, Math.max(s * config.orangeSatBoost, config.orangeSat));
       return hslToRgb(config.orangeHue, sat, l);
     }
 
-    // Magenta / hot pink (4-ball) → purple  — check BEFORE mauve
-    if (inMagenta && s >= config.pinkSatMin) {
+    // True magenta / hot pink (4) → purple. Do NOT use the near-red rose arc
+    // for pink→purple — that was turning the solid red 3-ball purple.
+    if (inMagenta && s >= config.pinkSatMin && b > g) {
       return hslToRgb(config.purpleHue, Math.min(1, s * 1.1), l);
     }
 
-    // Rose arc: split by saturation.
-    // Eyedropper on the 5 was ~#996869 (sat ~0.19). Pink 4 is more saturated.
-    if (inRoseArc && blueish && s >= config.mauveSatMin) {
-      if (s >= config.pinkSatMin) {
-        return hslToRgb(config.purpleHue, Math.min(1, s * 1.1), l);
-      }
-      if (s < config.mauveSatMax) {
+    // Dusty mauve / TV purple 5 → orange.
+    // #996869 has g/r ≈ b/r ≈ 0.68; pure red has g/r ≈ 0.2.
+    if (inRoseArc && s >= config.mauveSatMin && s < config.mauveSatMax) {
+      const ratio = config.mauveMinChannelRatio;
+      if (r > 0 && g / r >= ratio && b / r >= ratio && b >= g * 0.9) {
         const sat = Math.min(1, Math.max(s * config.orangeSatBoost, config.orangeSat));
         return hslToRgb(config.orangeHue, sat, l);
       }
@@ -111,73 +114,76 @@
   function attachProcessor(video) {
     if (video.dataset.orangePatched) return;
     video.dataset.orangePatched = '1';
-
-    // Clear any leftover CSS filter experiments
     video.style.removeProperty('filter');
 
     const parent = video.parentNode;
     if (!parent) return;
 
-    const canvas = document.createElement('canvas');
-    canvas.dataset.poolColorCanvas = '1';
-    canvas.style.cssText = [
-      'position:absolute',
-      'inset:0',
-      'width:100%',
-      'height:100%',
-      'object-fit:contain',
-      'pointer-events:none',
-      'z-index:2',
-    ].join(';');
+    parent.querySelectorAll('[data-pool-color-canvas]').forEach(c => c.remove());
 
-    const host = parent;
-    if (getComputedStyle(host).position === 'static') {
-      host.style.position = 'relative';
+    const display = document.createElement('canvas');
+    display.dataset.poolColorCanvas = '1';
+    display.style.cssText =
+      'position:absolute;inset:0;width:100%;height:100%;object-fit:contain;pointer-events:none;z-index:2';
+
+    if (getComputedStyle(parent).position === 'static') {
+      parent.style.position = 'relative';
     }
-    host.appendChild(canvas);
-
-    // Hide the raw video visually; keep it playing for frames
+    parent.appendChild(display);
     video.style.opacity = '0';
 
-    const ctx = canvas.getContext('2d', { willReadFrequently: true });
+    const displayCtx = display.getContext('2d');
+    const work = document.createElement('canvas');
+    const workCtx = work.getContext('2d', { willReadFrequently: true });
+
     let running = true;
-    let lastW = 0, lastH = 0;
+    let srcW = 0, srcH = 0;
 
-    function syncSize() {
-      const w = video.videoWidth || video.clientWidth;
-      const h = video.videoHeight || video.clientHeight;
-      if (!w || !h) return false;
-      if (w !== lastW || h !== lastH) {
-        canvas.width = w;
-        canvas.height = h;
-        lastW = w;
-        lastH = h;
-      }
-      return true;
-    }
-
-    function frame() {
+    function tick() {
       if (!running || !video.isConnected) return;
-      if (video.readyState >= 2 && syncSize()) {
+
+      if (video.readyState >= 2 && video.videoWidth) {
         try {
-          ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const vw = video.videoWidth;
+          const vh = video.videoHeight;
+          if (vw !== srcW || vh !== srcH) {
+            srcW = vw;
+            srcH = vh;
+            display.width = vw;
+            display.height = vh;
+            const scale = Math.min(1, config.processMaxWidth / vw);
+            work.width = Math.max(1, Math.round(vw * scale));
+            work.height = Math.max(1, Math.round(vh * scale));
+          }
+
+          workCtx.drawImage(video, 0, 0, work.width, work.height);
+          const imageData = workCtx.getImageData(0, 0, work.width, work.height);
           processImageData(imageData);
-          ctx.putImageData(imageData, 0, 0);
+          workCtx.putImageData(imageData, 0, 0);
+          displayCtx.imageSmoothingEnabled = true;
+          displayCtx.drawImage(work, 0, 0, display.width, display.height);
         } catch (e) {
-          // Cross-origin / tainted canvas — fall back silently
-          if (!canvas.dataset.corsWarned) {
-            canvas.dataset.corsWarned = '1';
+          if (!display.dataset.corsWarned) {
+            display.dataset.corsWarned = '1';
             console.warn('Pool color restorer: canvas blocked (CORS).', e.message);
           }
         }
       }
-      requestAnimationFrame(frame);
+
+      if (typeof video.requestVideoFrameCallback === 'function') {
+        video.requestVideoFrameCallback(tick);
+      } else {
+        requestAnimationFrame(tick);
+      }
     }
 
-    requestAnimationFrame(frame);
-    console.log('Color Engine Hooked: selective purple→orange, pink→purple.');
+    if (typeof video.requestVideoFrameCallback === 'function') {
+      video.requestVideoFrameCallback(tick);
+    } else {
+      requestAnimationFrame(tick);
+    }
 
+    console.log('Color Engine Hooked: selective remap @ max', config.processMaxWidth + 'px');
     video.addEventListener('emptied', () => { running = false; }, { once: true });
   }
 
@@ -187,12 +193,24 @@
       findVideosInShadow(host.shadowRoot).forEach(attachProcessor);
     });
     document.querySelectorAll('video').forEach(v => {
-      // Skip videos already handled via shadow walk
       if (!v.closest('mux-player, mux-video')) attachProcessor(v);
     });
   }
 
-  window.__poolColor = { config, apply, remapPixel };
+  function reset() {
+    document.querySelectorAll('mux-player, mux-video').forEach(host => {
+      if (!host.shadowRoot) return;
+      findVideosInShadow(host.shadowRoot).forEach(v => {
+        v.style.opacity = '';
+        v.style.removeProperty('filter');
+        delete v.dataset.orangePatched;
+        v.parentNode?.querySelectorAll('[data-pool-color-canvas]').forEach(c => c.remove());
+      });
+    });
+    console.log('Reset — original colors restored');
+  }
+
+  window.__poolColor = { config, apply, reset, remapPixel };
 
   const observer = new MutationObserver(() => apply());
   observer.observe(document.documentElement, { childList: true, subtree: true });
