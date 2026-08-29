@@ -8,38 +8,43 @@
 
   const DEFAULTS = {
     enabled: true,
-    // Purple -> orange (5-ball): higher sat + slight lift = less muddy brown
+    // Purple -> orange (5-ball)
     orangeHue: 32 / 360,
-    orangeSat: 0.78,
+    orangeSat: 0.60,
     orangeSatBoost: 1.7,
     orangeLift: 0.06,
-    // Mauve / purple detection → orange (lower ratio = more sensitive)
-    orangeSense: 0.55,
+    // High = selective (preferred: less spill into pink)
+    orangeSense: 0.75,
     mauveSatMin: 0.05,
     mauveSatMax: 0.48,
-    // Pink → purple
-    purpleHue: 285 / 360,
-    pinkSat: 0.65,
-    pinkSatBoost: 1.25,
-    // Lower = catch more pinks (sat threshold + blue bias)
-    pinkSense: 0.55,
+    // Pink → purple: cooler blue-violet
+    purpleHue: 258 / 360,
+    pinkSat: 0.88,
+    pinkSatBoost: 1.15,
+    // Mid = balanced pink catch vs red spill
+    pinkSense: 0.50,
   };
 
   const config = Object.assign({}, DEFAULTS);
 
-  // orangeSense 0–1 → mauveMinChannelRatio ~0.65–0.30 (higher sense = catch more)
+  // orangeSense 0–1 → stricter mauve gate (higher = more selective / exclusive)
   function mauveRatio() {
-    return 0.65 - config.orangeSense * 0.35;
+    return 0.30 + config.orangeSense * 0.35;
   }
 
-  // pinkSense 0–1 → pinkSatMin ~0.35–0.08
+  // pinkSense 0–1 → higher sat floor (higher = more selective)
   function pinkSatMin() {
-    return 0.35 - config.pinkSense * 0.27;
+    return 0.12 + config.pinkSense * 0.20;
   }
 
-  // pinkSense 0–1 → blue-over-green bias 0.08 → -0.02 (higher sense = looser)
+  // Higher = require more blue vs red (spares the red 3-ball)
+  function pinkMinBlueRatio() {
+    return 0.50 + config.pinkSense * 0.22;
+  }
+
+  // Higher = require clearer B>G
   function pinkBlueBias() {
-    return 0.08 - config.pinkSense * 0.10;
+    return 0.01 + config.pinkSense * 0.05;
   }
 
   const VERT = `
@@ -67,6 +72,7 @@
     uniform float u_mauveRatio;
     uniform float u_pinkSatMin;
     uniform float u_pinkBlueBias;
+    uniform float u_pinkMinBlueRatio;
 
     vec3 rgb2hsl(vec3 c) {
       float maxc = max(max(c.r, c.g), c.b);
@@ -99,6 +105,24 @@
       return vec3(hue2rgb(p, q, h + 1.0/3.0), hue2rgb(p, q, h), hue2rgb(p, q, h - 1.0/3.0));
     }
 
+    // High sat + low L → near-black; ease sat and lift shadows for readable dark orange
+    vec3 toOrange(float s, float l) {
+      float sat = min(1.0, max(s * u_orangeSatBoost, u_orangeSat));
+      float shadow = smoothstep(0.03, 0.45, l);
+      sat *= mix(0.22, 1.0, shadow);
+      float lite = clamp(l + u_orangeLift + (1.0 - shadow) * 0.10, 0.0, 1.0);
+      return hsl2rgb(vec3(u_orangeHue, sat, lite));
+    }
+
+    // Cool purple — capped sat so it doesn't read magenta/warm
+    vec3 toPurple(float s, float l) {
+      float sat = min(0.82, max(s * u_pinkSatBoost, u_pinkSat));
+      float shadow = smoothstep(0.03, 0.40, l);
+      sat *= mix(0.35, 1.0, shadow);
+      float lite = clamp(l * 0.96 + (1.0 - shadow) * 0.04, 0.0, 1.0);
+      return hsl2rgb(vec3(u_purpleHue, sat, lite));
+    }
+
     void main() {
       vec4 tex = texture2D(u_tex, v_uv);
       vec3 c = tex.rgb;
@@ -107,47 +131,39 @@
       float s = hsl.y;
       float l = hsl.z;
 
-      if (s < 0.04 || l < 0.07 || l > 0.93) {
+      // Don't drop dark chromatic pixels — those are ball shadows
+      if (s < 0.04 || l > 0.93) {
         gl_FragColor = tex;
         return;
       }
 
-      // Violet / blue-purple
-      bool inViolet = h >= 0.69 && h < 0.81;     // ~248–292°
-      // Magenta / hot pink
-      bool inMagenta = h >= 0.81 && h < 0.97;    // ~292–350°
-      // Dusty rose / near-red mauve
-      bool inRose = h >= 0.92 || h < 0.08;       // ~331–29°
+      // Violet / blue-purple → orange (5)
+      bool inViolet = h >= 0.69 && h < 0.82;     // ~248–295°
+      // Pink through nearly full magenta arc (avoids half-orange / half-purple balls)
+      bool inPink = h >= 0.82 && h < 0.995;      // ~295–358°
+      // Only the last slice of near-red for dusty mauve 5
+      bool inRose = h >= 0.995 || h < 0.08;      // ~358–29°
 
       vec3 outc = c;
       float blueBias = c.b - c.g;
+      float br = c.b / max(c.r, 0.001);
 
-      // Classic violet → vivid orange
       if (inViolet && s > 0.08) {
-        float sat = min(1.0, max(s * u_orangeSatBoost, u_orangeSat));
-        float lite = clamp(l + u_orangeLift, 0.0, 1.0);
-        outc = hsl2rgb(vec3(u_orangeHue, sat, lite));
-      }
-      // Magenta / pink → purple (wider than before)
-      else if (inMagenta && s >= u_pinkSatMin && blueBias >= u_pinkBlueBias) {
-        float sat = min(1.0, max(s * u_pinkSatBoost, u_pinkSat));
-        outc = hsl2rgb(vec3(u_purpleHue, sat, l));
-      }
-      // Rose arc: high-sat pinkish → purple; dusty mauve → orange
-      else if (inRose) {
+        outc = toOrange(s, l);
+      } else if (inPink && s >= u_pinkSatMin
+          && blueBias >= u_pinkBlueBias
+          && br >= u_pinkMinBlueRatio) {
+        outc = toPurple(s, l);
+      } else if (inRose) {
+        // Strict mauve only: low-ish sat, B≈G (pink is B>>G → stays out)
         bool looksMauve = c.r > 0.01
           && c.g / c.r >= u_mauveRatio
-          && c.b / c.r >= u_mauveRatio
-          && c.b >= c.g * 0.88;
+          && br >= u_mauveRatio
+          && abs(c.b - c.g) <= 0.06
+          && s < min(u_mauveSatMax, 0.32);
 
-        if (s >= u_pinkSatMin && blueBias >= u_pinkBlueBias && s >= u_mauveSatMax * 0.85) {
-          // Saturated pink in the rose arc
-          float sat = min(1.0, max(s * u_pinkSatBoost, u_pinkSat));
-          outc = hsl2rgb(vec3(u_purpleHue, sat, l));
-        } else if (looksMauve && s >= u_mauveSatMin && s < u_mauveSatMax) {
-          float sat = min(1.0, max(s * u_orangeSatBoost, u_orangeSat));
-          float lite = clamp(l + u_orangeLift, 0.0, 1.0);
-          outc = hsl2rgb(vec3(u_orangeHue, sat, lite));
+        if (looksMauve && s >= u_mauveSatMin) {
+          outc = toOrange(s, l);
         }
       }
 
@@ -267,6 +283,7 @@
       mauveRatio: gl.getUniformLocation(prog, 'u_mauveRatio'),
       pinkSatMin: gl.getUniformLocation(prog, 'u_pinkSatMin'),
       pinkBlueBias: gl.getUniformLocation(prog, 'u_pinkBlueBias'),
+      pinkMinBlueRatio: gl.getUniformLocation(prog, 'u_pinkMinBlueRatio'),
     };
 
     const tex = gl.createTexture();
@@ -319,6 +336,7 @@
           gl.uniform1f(locs.mauveRatio, mauveRatio());
           gl.uniform1f(locs.pinkSatMin, pinkSatMin());
           gl.uniform1f(locs.pinkBlueBias, pinkBlueBias());
+          gl.uniform1f(locs.pinkMinBlueRatio, pinkMinBlueRatio());
 
           gl.drawArrays(gl.TRIANGLES, 0, 6);
         } catch (e) {

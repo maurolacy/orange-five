@@ -1,9 +1,9 @@
 const DEFAULTS = {
   enabled: true,
-  orangeSat: 0.78,
-  orangeSense: 0.55,
-  pinkSat: 0.65,
-  pinkSense: 0.55,
+  orangeSat: 0.60,
+  orangeSense: 0.75,
+  pinkSat: 0.88,
+  pinkSense: 0.50,
 };
 
 const KEYS = ['enabled', 'orangeSat', 'orangeSense', 'pinkSat', 'pinkSense'];
