@@ -130,37 +130,47 @@
       float h = hsl.x;
       float s = hsl.y;
       float l = hsl.z;
+      float chroma = max(max(c.r, c.g), c.b) - min(min(c.r, c.g), c.b);
 
-      // Don't drop dark chromatic pixels — those are ball shadows
-      if (s < 0.04 || l > 0.93) {
+      // Skip near-gray, blown highlights, and compression-noise speckles
+      if (s < 0.06 || chroma < 0.10 || l > 0.93) {
+        gl_FragColor = tex;
+        return;
+      }
+      // Dark carpet / crowd noise: only remap if clearly colourful (ball shadow)
+      if (l < 0.16 && (s < 0.22 || chroma < 0.14)) {
         gl_FragColor = tex;
         return;
       }
 
-      // Violet / blue-purple → orange (5)
-      bool inViolet = h >= 0.69 && h < 0.82;     // ~248–295°
-      // Pink through nearly full magenta arc (avoids half-orange / half-purple balls)
+      // Violet / blue-purple → orange (5). Keep out of banner-blue (~210–240°).
+      bool inViolet = h >= 0.72 && h < 0.82;     // ~259–295°
       bool inPink = h >= 0.82 && h < 0.995;      // ~295–358°
-      // Only the last slice of near-red for dusty mauve 5
       bool inRose = h >= 0.995 || h < 0.08;      // ~358–29°
 
       vec3 outc = c;
       float blueBias = c.b - c.g;
       float br = c.b / max(c.r, 0.001);
 
-      if (inViolet && s > 0.08) {
+      // Purple balls have real red; pure/banner blue does not
+      bool hasPurpleRed = c.r > 0.14 && c.r > c.b * 0.28;
+
+      if (inViolet && s > 0.14 && hasPurpleRed) {
         outc = toOrange(s, l);
-      } else if (inPink && s >= u_pinkSatMin
+      } else if (inPink && s >= max(u_pinkSatMin, 0.14)
           && blueBias >= u_pinkBlueBias
-          && br >= u_pinkMinBlueRatio) {
+          && br >= u_pinkMinBlueRatio
+          && chroma > 0.12) {
         outc = toPurple(s, l);
       } else if (inRose) {
-        // Strict mauve only: low-ish sat, B≈G (pink is B>>G → stays out)
-        bool looksMauve = c.r > 0.01
+        bool looksMauve = c.r > 0.12
           && c.g / c.r >= u_mauveRatio
           && br >= u_mauveRatio
           && abs(c.b - c.g) <= 0.06
-          && s < min(u_mauveSatMax, 0.32);
+          && s >= 0.08
+          && s < min(u_mauveSatMax, 0.30)
+          && chroma > 0.10
+          && l > 0.14;
 
         if (looksMauve && s >= u_mauveSatMin) {
           outc = toOrange(s, l);
