@@ -11,7 +11,7 @@
   function injectOrangeFilter() {
     if (document.getElementById('restore-orange-5ball')) return; // Already running
 
-    const svgNS = "http://w3.org";
+    const svgNS = "http://www.w3.org/2000/svg";
     const svgRoot = document.createElementNS(svgNS, "svg");
     svgRoot.setAttribute("style", "position: absolute; width: 0; height: 0; overflow: hidden;");
     svgRoot.setAttribute("aria-hidden", "true");
@@ -39,6 +39,8 @@
       .video-js,
       .vjs-tech,
       iframe,
+      mux-player,
+      mux-video,
       [class*="player"],
       [class*="video"] {
         filter: url(#restore-orange-5ball) !important;
@@ -50,7 +52,7 @@
 
   // 2. The Radar: Watches for the streaming video player to build its layers
   const observer = new MutationObserver((mutations, obs) => {
-    const videoActive = document.querySelector('video, .video-js, iframe, [class*="video"]');
+    const videoActive = document.querySelector('video, .video-js, iframe, mux-player, mux-video, [class*="video"]');
     if (videoActive) {
       injectOrangeFilter();
       // Keep observing in case the site reloads the stream window
