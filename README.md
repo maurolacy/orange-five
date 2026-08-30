@@ -71,7 +71,7 @@ Whether those improvements justify losing the orange five is, of course, a matte
 - Not ball-aware: similar colours in the background, UI, or cloth can shift.
 - Look varies by event and camera; you may need to tweak saturation and selectivity.
 - Requires WebGL; the overlay needs access to the video texture. Works on same-origin streams (WNT TV, Matchroom). On YouTube, the video is served cross-origin and the browser blocks texture access — the extension detects this and stays out of the way.
-- Only helps *viewers* — it does not change what players see at the table.
+- Only helps *viewers* — it does not change what players see at the table.🤷‍♂️
 
 ## Privacy
 
