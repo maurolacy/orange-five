@@ -1,8 +1,8 @@
 /**
  * Pool Color Restorer — best-effort global WebGL remapper
  *
- * Intent: remap TV purple/mauve → orange and pink → purple on live pool video.
- * Applies to the whole frame (no region mask). Tunable via popup / storage.
+ * Intent: remap TV purple/mauve → orange, pink → purple, and optionally
+ * cyan → blue on live pool video. Whole-frame; tunable via popup / storage.
  *
  * Known limits: spill onto similar hues in the scene; not ball-aware.
  * Next direction (separate effort): ball detection → mask-only remap.
@@ -19,17 +19,22 @@
     enabled: true,
     orangeEnabled: true,
     pinkEnabled: true,
+    cyanEnabled: false, // optional: TV cyan 2-ball → blue
     orangeHue: 32 / 360,
     orangeSat: 0.60,
     orangeSatBoost: 1.7,
     orangeLift: 0.06,
-    orangeSense: 0.75, // higher = more selective (does not disable; use orangeEnabled)
+    orangeSense: 0.75,
     mauveSatMin: 0.05,
     mauveSatMax: 0.48,
     purpleHue: 258 / 360,
     pinkSat: 0.88,
     pinkSatBoost: 1.15,
     pinkSense: 0.50,
+    blueHue: 220 / 360,
+    cyanSat: 0.70,
+    cyanSatBoost: 1.2,
+    cyanSense: 0.55,
   };
 
   const config = Object.assign({}, DEFAULTS);
@@ -48,6 +53,11 @@
 
   function pinkBlueBias() {
     return 0.01 + config.pinkSense * 0.05;
+  }
+
+  // Higher selectivity → higher sat floor (spares green cloth / 6-ball)
+  function cyanSatMin() {
+    return 0.14 + config.cyanSense * 0.22;
   }
 
   const VERT = `
@@ -78,6 +88,11 @@
     uniform float u_pinkMinBlueRatio;
     uniform float u_orangeEnabled;
     uniform float u_pinkEnabled;
+    uniform float u_cyanEnabled;
+    uniform float u_blueHue;
+    uniform float u_cyanSat;
+    uniform float u_cyanSatBoost;
+    uniform float u_cyanSatMin;
 
     vec3 rgb2hsl(vec3 c) {
       float maxc = max(max(c.r, c.g), c.b);
@@ -126,6 +141,14 @@
       return hsl2rgb(vec3(u_purpleHue, sat, lite));
     }
 
+    vec3 toBlue(float s, float l) {
+      float sat = min(0.85, max(s * u_cyanSatBoost, u_cyanSat));
+      float shadow = smoothstep(0.03, 0.40, l);
+      sat *= mix(0.30, 1.0, shadow);
+      float lite = clamp(l * 0.98 + (1.0 - shadow) * 0.04, 0.0, 1.0);
+      return hsl2rgb(vec3(u_blueHue, sat, lite));
+    }
+
     void main() {
       vec4 tex = texture2D(u_tex, v_uv);
       vec3 c = tex.rgb;
@@ -147,11 +170,16 @@
       bool inViolet = h >= 0.70 && h < 0.83;
       bool inPink = h >= 0.83 && h < 0.97;
       bool inRose = h >= 0.97 || h < 0.12;
+      // Cyan / turquoise (TV 2-ball) — between green and blue
+      bool inCyan = h >= 0.45 && h < 0.58;
 
       vec3 outc = c;
       float blueBias = c.b - c.g;
       float br = c.b / max(c.r, 0.001);
       bool hasPurpleRed = c.r > 0.10 && c.r > c.b * 0.22;
+      // Cyan: G and B both beat R; not a pure green 6-ball (B too low)
+      bool looksCyan = c.g > c.r + 0.04 && c.b > c.r + 0.04
+        && c.b > c.g * 0.75 && c.g > c.b * 0.55;
 
       if (u_orangeEnabled > 0.5 && inViolet && s > 0.10 && hasPurpleRed) {
         outc = toOrange(s, l);
@@ -172,6 +200,9 @@
         if (looksMauve && s >= u_mauveSatMin) {
           outc = toOrange(s, l);
         }
+      } else if (u_cyanEnabled > 0.5 && inCyan && looksCyan
+          && s >= u_cyanSatMin && chroma > 0.12) {
+        outc = toBlue(s, l);
       }
 
       gl_FragColor = vec4(outc, tex.a);
@@ -332,6 +363,11 @@
       pinkMinBlueRatio: gl.getUniformLocation(prog, 'u_pinkMinBlueRatio'),
       orangeEnabled: gl.getUniformLocation(prog, 'u_orangeEnabled'),
       pinkEnabled: gl.getUniformLocation(prog, 'u_pinkEnabled'),
+      cyanEnabled: gl.getUniformLocation(prog, 'u_cyanEnabled'),
+      blueHue: gl.getUniformLocation(prog, 'u_blueHue'),
+      cyanSat: gl.getUniformLocation(prog, 'u_cyanSat'),
+      cyanSatBoost: gl.getUniformLocation(prog, 'u_cyanSatBoost'),
+      cyanSatMin: gl.getUniformLocation(prog, 'u_cyanSatMin'),
     };
 
     const tex = gl.createTexture();
@@ -382,6 +418,11 @@
           gl.uniform1f(locs.pinkMinBlueRatio, pinkMinBlueRatio());
           gl.uniform1f(locs.orangeEnabled, config.orangeEnabled ? 1.0 : 0.0);
           gl.uniform1f(locs.pinkEnabled, config.pinkEnabled ? 1.0 : 0.0);
+          gl.uniform1f(locs.cyanEnabled, config.cyanEnabled ? 1.0 : 0.0);
+          gl.uniform1f(locs.blueHue, config.blueHue);
+          gl.uniform1f(locs.cyanSat, config.cyanSat);
+          gl.uniform1f(locs.cyanSatBoost, config.cyanSatBoost);
+          gl.uniform1f(locs.cyanSatMin, cyanSatMin());
           gl.drawArrays(gl.TRIANGLES, 0, 6);
         } catch (e) {
           if (!canvas.dataset.corsWarned) {

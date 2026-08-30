@@ -55,6 +55,25 @@
     </label>
   </section>
 
+  <section id="cyanSection">
+    <h2>
+      <label class="section-toggle">
+        <input type="checkbox" id="cyanEnabled" />
+        Cyan → blue (2-ball)
+      </label>
+    </h2>
+    <label>
+      Saturation
+      <input type="range" id="cyanSat" min="0.2" max="1" step="0.01" />
+      <output id="cyanSatOut"></output>
+    </label>
+    <label>
+      Selectivity
+      <input type="range" id="cyanSense" min="0" max="1" step="0.01" />
+      <output id="cyanSenseOut"></output>
+    </label>
+  </section>
+
   <footer>
     <button type="button" id="reset">Reset defaults</button>
   </footer>
