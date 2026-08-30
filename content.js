@@ -398,6 +398,13 @@
           if (gl.isContextLost()) return;
           gl.bindTexture(gl.TEXTURE_2D, tex);
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
+        } catch (e) {
+          console.warn('Orange Five: WebGL texture blocked (cross-origin video). Restoring original.', e.message);
+          disposeActive();
+          return;
+        }
+
+        try {
           gl.useProgram(prog);
           gl.bindBuffer(gl.ARRAY_BUFFER, buf);
           gl.enableVertexAttribArray(aPos);
@@ -425,10 +432,7 @@
           gl.uniform1f(locs.cyanSatMin, cyanSatMin());
           gl.drawArrays(gl.TRIANGLES, 0, 6);
         } catch (e) {
-          if (!canvas.dataset.corsWarned) {
-            canvas.dataset.corsWarned = '1';
-            console.warn('Orange Five: WebGL texture blocked.', e.message);
-          }
+          console.error('Orange Five: draw error.', e.message);
         }
       }
 

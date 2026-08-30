@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Orange Five",
-  "version": "2.1.0",
+  "version": "2.1.1",
   "description": "Restore classic pool ball colours on TV streams: purple 5→orange, pink 4→purple, cyan 2→blue.",
   "permissions": ["storage"],
   "icons": {
