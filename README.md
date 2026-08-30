@@ -1,4 +1,4 @@
-# Pool Ball Color Restoration
+# Orange Five
 
 A Chrome extension that restores **classic** pool ball colours on live and VOD streams that use the newer "TV-optimised" palette.
 
@@ -39,7 +39,7 @@ It is a **best-effort global remap**: pixels matching those hues anywhere in the
 2. Open `chrome://extensions`.
 3. Enable **Developer mode**.
 4. **Load unpacked** → select this project folder.
-5. Pin **Pool Color Restorer** from the toolbar if you like.
+5. Pin **Orange Five** from the toolbar if you like.
 
 Works on Chromium-based browsers that support Manifest V3 extensions (Chrome, Edge, Brave, etc.).
 

@@ -1,5 +1,5 @@
 /**
- * Pool Color Restorer — best-effort global WebGL remapper
+ * Orange Five — best-effort global WebGL colour remapper
  *
  * Intent: remap TV purple/mauve → orange, pink → purple, and optionally
  * cyan → blue on live pool video. Whole-frame; tunable via popup / storage.
@@ -318,7 +318,7 @@
       powerPreference: 'default',
     });
     if (!gl) {
-      console.warn('Pool color restorer: WebGL unavailable');
+      console.warn('Orange Five: WebGL unavailable');
       video.style.opacity = '';
       delete video.dataset.orangePatched;
       canvas.remove();
@@ -427,7 +427,7 @@
         } catch (e) {
           if (!canvas.dataset.corsWarned) {
             canvas.dataset.corsWarned = '1';
-            console.warn('Pool color restorer: WebGL texture blocked.', e.message);
+            console.warn('Orange Five: WebGL texture blocked.', e.message);
           }
         }
       }
