@@ -77,6 +77,17 @@ Whether those improvements justify losing the orange five is, of course, a matte
 
 No analytics, no accounts, no network calls from the extension itself. Only `storage` is used to remember your settings.
 
+## History
+
+Started on August 29, 2026, out of frustration with the purple 5-ball during the WNT TV streaming of the US Open 9-Ball semifinals. The first version was a simple SVG colour-matrix filter injected via a content script — which didn't work, because Chrome's hardware video overlay bypasses CSS filters entirely. After a detour through canvas-based pixel processing (too slow), the extension landed on a WebGL fragment shader that runs on the GPU and remaps colours in real time. The popup controls, per-remap toggles, and cyan→blue option followed over the next day.
+
+## Authors
+
+- **Google AI (likely Gemini and/or Claude)** — Historical research and original discussion.
+- **Cursor Auto (Grok?)** — Development, colour science, debugging.
+- **Claude Opus 4.6** — Development, colour science, README prose, debugging.
+- **Mauro Lacy** — Idea, pair programming, testing and reporting, pool-watching.
+
 ## License
 
 MIT
