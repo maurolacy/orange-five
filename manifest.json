@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "Pool Ball Color Restoration",
-  "version": "1.15",
-  "description": "Restores the hated purple 5-ball back to its rightful historical orange.",
+  "version": "2.0.0",
+  "description": "Best-effort WebGL remap: TV purple 5-ball → orange, pink 4-ball → purple.",
   "permissions": ["storage", "activeTab"],
   "action": {
     "default_popup": "popup.html",

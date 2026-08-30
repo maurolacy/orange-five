@@ -1,3 +1,12 @@
+/**
+ * Pool Color Restorer — best-effort global WebGL remapper
+ *
+ * Intent: remap TV purple/mauve → orange and pink → purple on live pool video.
+ * Applies to the whole frame (no region mask). Tunable via popup / storage.
+ *
+ * Known limits: spill onto similar hues in the scene; not ball-aware.
+ * Next direction (separate effort): ball detection → mask-only remap.
+ */
 (function() {
   'use strict';
 
@@ -8,41 +17,33 @@
 
   const DEFAULTS = {
     enabled: true,
-    // Purple -> orange (5-ball)
     orangeHue: 32 / 360,
     orangeSat: 0.60,
     orangeSatBoost: 1.7,
     orangeLift: 0.06,
-    // High = selective (preferred: less spill into pink)
-    orangeSense: 0.75,
+    orangeSense: 0.75, // higher = more selective
     mauveSatMin: 0.05,
     mauveSatMax: 0.48,
-    // Pink → purple: cooler blue-violet
     purpleHue: 258 / 360,
     pinkSat: 0.88,
     pinkSatBoost: 1.15,
-    // Mid = balanced pink catch vs red spill
     pinkSense: 0.50,
   };
 
   const config = Object.assign({}, DEFAULTS);
 
-  // orangeSense 0–1 → stricter mauve gate (higher = more selective / exclusive)
   function mauveRatio() {
     return 0.30 + config.orangeSense * 0.35;
   }
 
-  // pinkSense 0–1 → higher sat floor (higher = more selective)
   function pinkSatMin() {
     return 0.12 + config.pinkSense * 0.20;
   }
 
-  // Higher = require more blue vs red (spares the red 3-ball)
   function pinkMinBlueRatio() {
     return 0.50 + config.pinkSense * 0.22;
   }
 
-  // Higher = require clearer B>G
   function pinkBlueBias() {
     return 0.01 + config.pinkSense * 0.05;
   }
@@ -105,7 +106,6 @@
       return vec3(hue2rgb(p, q, h + 1.0/3.0), hue2rgb(p, q, h), hue2rgb(p, q, h - 1.0/3.0));
     }
 
-    // High sat + low L → near-black; ease sat and lift shadows for readable dark orange
     vec3 toOrange(float s, float l) {
       float sat = min(1.0, max(s * u_orangeSatBoost, u_orangeSat));
       float shadow = smoothstep(0.03, 0.45, l);
@@ -114,7 +114,6 @@
       return hsl2rgb(vec3(u_orangeHue, sat, lite));
     }
 
-    // Cool purple — capped sat so it doesn't read magenta/warm
     vec3 toPurple(float s, float l) {
       float sat = min(0.82, max(s * u_pinkSatBoost, u_pinkSat));
       float shadow = smoothstep(0.03, 0.40, l);
@@ -132,30 +131,25 @@
       float l = hsl.z;
       float chroma = max(max(c.r, c.g), c.b) - min(min(c.r, c.g), c.b);
 
-      // Skip near-gray, blown highlights, and compression-noise speckles
       if (s < 0.06 || chroma < 0.10 || l > 0.93) {
         gl_FragColor = tex;
         return;
       }
-      // Dark carpet / crowd noise: only remap if clearly colourful (ball shadow)
       if (l < 0.16 && (s < 0.22 || chroma < 0.14)) {
         gl_FragColor = tex;
         return;
       }
 
-      // Violet / blue-purple → orange (5). Keep out of banner-blue (~210–240°).
-      bool inViolet = h >= 0.72 && h < 0.82;     // ~259–295°
-      bool inPink = h >= 0.82 && h < 0.995;      // ~295–358°
-      bool inRose = h >= 0.995 || h < 0.08;      // ~358–29°
+      bool inViolet = h >= 0.70 && h < 0.83;
+      bool inPink = h >= 0.83 && h < 0.97;
+      bool inRose = h >= 0.97 || h < 0.12;
 
       vec3 outc = c;
       float blueBias = c.b - c.g;
       float br = c.b / max(c.r, 0.001);
+      bool hasPurpleRed = c.r > 0.10 && c.r > c.b * 0.22;
 
-      // Purple balls have real red; pure/banner blue does not
-      bool hasPurpleRed = c.r > 0.14 && c.r > c.b * 0.28;
-
-      if (inViolet && s > 0.14 && hasPurpleRed) {
+      if (inViolet && s > 0.10 && hasPurpleRed) {
         outc = toOrange(s, l);
       } else if (inPink && s >= max(u_pinkSatMin, 0.14)
           && blueBias >= u_pinkBlueBias
@@ -163,15 +157,14 @@
           && chroma > 0.12) {
         outc = toPurple(s, l);
       } else if (inRose) {
-        bool looksMauve = c.r > 0.12
-          && c.g / c.r >= u_mauveRatio
-          && br >= u_mauveRatio
-          && abs(c.b - c.g) <= 0.06
-          && s >= 0.08
-          && s < min(u_mauveSatMax, 0.30)
-          && chroma > 0.10
-          && l > 0.14;
-
+        bool looksMauve = c.r > 0.10
+          && c.g / c.r >= u_mauveRatio * 0.85
+          && br >= u_mauveRatio * 0.85
+          && abs(c.b - c.g) <= 0.12
+          && s >= 0.06
+          && s < min(u_mauveSatMax, 0.40)
+          && chroma > 0.06
+          && l > 0.10 && l < 0.85;
         if (looksMauve && s >= u_mauveSatMin) {
           outc = toOrange(s, l);
         }
@@ -230,9 +223,9 @@
     video.style.opacity = '';
     video.style.removeProperty('filter');
     delete video.dataset.orangePatched;
-    video.parentNode?.querySelectorAll('[data-pool-color-canvas]').forEach(c => {
-      c._poolStop = true;
-      c.remove();
+    video.parentNode?.querySelectorAll('[data-pool-color-canvas]').forEach(el => {
+      el._poolStop = true;
+      el.remove();
     });
   }
 
@@ -244,7 +237,7 @@
 
     const parent = video.parentNode;
     if (!parent) return;
-    parent.querySelectorAll('[data-pool-color-canvas]').forEach(c => c.remove());
+    parent.querySelectorAll('[data-pool-color-canvas]').forEach(el => el.remove());
 
     const canvas = document.createElement('canvas');
     canvas.dataset.poolColorCanvas = '1';
@@ -307,7 +300,6 @@
 
     function draw() {
       if (canvas._poolStop || !video.isConnected || !canvas.isConnected) return;
-
       if (!config.enabled) {
         requestAnimationFrame(draw);
         return;
@@ -327,12 +319,10 @@
         try {
           gl.bindTexture(gl.TEXTURE_2D, tex);
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
-
           gl.useProgram(prog);
           gl.bindBuffer(gl.ARRAY_BUFFER, buf);
           gl.enableVertexAttribArray(aPos);
           gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
-
           gl.uniform1i(uTex, 0);
           gl.uniform1f(locs.orangeHue, config.orangeHue);
           gl.uniform1f(locs.orangeSat, config.orangeSat);
@@ -347,7 +337,6 @@
           gl.uniform1f(locs.pinkSatMin, pinkSatMin());
           gl.uniform1f(locs.pinkBlueBias, pinkBlueBias());
           gl.uniform1f(locs.pinkMinBlueRatio, pinkMinBlueRatio());
-
           gl.drawArrays(gl.TRIANGLES, 0, 6);
         } catch (e) {
           if (!canvas.dataset.corsWarned) {
@@ -382,13 +371,11 @@
   function enable() {
     config.enabled = true;
     apply();
-    console.log('Pool color ON');
   }
 
   function disable() {
     config.enabled = false;
     allVideos().forEach(detach);
-    console.log('Pool color OFF');
   }
 
   function updateConfig(partial) {
@@ -401,7 +388,6 @@
         disable();
       }
     }
-    // Other knobs are read live each frame — no reattach needed
   }
 
   function loadSettings(cb) {
@@ -441,6 +427,6 @@
 
   loadSettings(() => {
     apply();
-    console.log('Color Engine Hooked: WebGL + controls');
+    console.log('Pool Color: WebGL global remapper');
   });
 })();
