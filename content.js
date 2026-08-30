@@ -219,23 +219,52 @@
     return list;
   }
 
-  function detach(video) {
-    video.style.opacity = '';
-    delete video.dataset.orangePatched;
-    video.parentNode?.querySelectorAll('[data-pool-color-canvas]').forEach(el => {
+  // Pick the main stream video (ignore tiny ad / preview players).
+  function primaryVideo() {
+    return allVideos()
+      .filter(v => v.isConnected && (v.videoWidth >= 320 || v.clientWidth >= 240))
+      .sort((a, b) => (b.videoWidth * b.videoHeight) - (a.videoWidth * a.videoHeight))[0] || null;
+  }
+
+  /** One WebGL context per page — Chrome drops old ones after ~8–16. */
+  let active = null; // { video, canvas, gl, stop }
+
+  function disposeActive() {
+    if (!active) return;
+    active.stop = true;
+    if (active.gl) {
+      const ext = active.gl.getExtension('WEBGL_lose_context');
+      if (ext) ext.loseContext();
+    }
+    active.canvas?.remove();
+    if (active.video) {
+      active.video.style.opacity = '';
+      delete active.video.dataset.orangePatched;
+    }
+    active = null;
+  }
+
+  function disposeStrayCanvases() {
+    document.querySelectorAll('[data-pool-color-canvas]').forEach(el => {
+      if (active && el === active.canvas) return;
       el._poolStop = true;
+      const gl = el.getContext('webgl') || el.getContext('experimental-webgl');
+      const ext = gl?.getExtension?.('WEBGL_lose_context');
+      if (ext) ext.loseContext();
       el.remove();
     });
   }
 
   function attachProcessor(video) {
-    if (!config.enabled) return;
-    if (video.dataset.orangePatched) return;
-    video.dataset.orangePatched = '1';
+    if (!config.enabled || !video) return;
+    // Already driving this video — keep the existing context.
+    if (active && active.video === video && active.canvas?.isConnected) return;
+
+    disposeActive();
+    disposeStrayCanvases();
 
     const parent = video.parentNode;
     if (!parent) return;
-    parent.querySelectorAll('[data-pool-color-canvas]').forEach(el => el.remove());
 
     const canvas = document.createElement('canvas');
     canvas.dataset.poolColorCanvas = '1';
@@ -245,22 +274,34 @@
     if (getComputedStyle(parent).position === 'static') parent.style.position = 'relative';
     parent.appendChild(canvas);
     video.style.opacity = '0';
+    video.dataset.orangePatched = '1';
 
     const gl = canvas.getContext('webgl', {
       alpha: false,
       antialias: false,
       preserveDrawingBuffer: false,
-      powerPreference: 'high-performance',
+      powerPreference: 'default',
     });
     if (!gl) {
       console.warn('Pool color restorer: WebGL unavailable');
       video.style.opacity = '';
       delete video.dataset.orangePatched;
+      canvas.remove();
       return;
     }
 
     const prog = createProgram(gl, VERT, FRAG);
-    if (!prog) return;
+    if (!prog) {
+      const ext = gl.getExtension('WEBGL_lose_context');
+      if (ext) ext.loseContext();
+      canvas.remove();
+      video.style.opacity = '';
+      delete video.dataset.orangePatched;
+      return;
+    }
+
+    const proc = { video, canvas, gl, stop: false };
+    active = proc;
 
     const buf = gl.createBuffer();
     gl.bindBuffer(gl.ARRAY_BUFFER, buf);
@@ -297,11 +338,8 @@
     let lastW = 0, lastH = 0;
 
     function draw() {
-      if (canvas._poolStop || !video.isConnected || !canvas.isConnected) return;
-      if (!config.enabled) {
-        requestAnimationFrame(draw);
-        return;
-      }
+      if (proc.stop || active !== proc || !video.isConnected || !canvas.isConnected) return;
+      if (!config.enabled) return;
 
       if (video.readyState >= 2 && video.videoWidth) {
         const w = video.videoWidth;
@@ -315,6 +353,7 @@
         }
 
         try {
+          if (gl.isContextLost()) return;
           gl.bindTexture(gl.TEXTURE_2D, tex);
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
           gl.useProgram(prog);
@@ -360,10 +399,15 @@
 
   function apply() {
     if (!config.enabled) {
-      allVideos().forEach(detach);
+      disposeActive();
+      disposeStrayCanvases();
       return;
     }
-    allVideos().forEach(attachProcessor);
+    // Drop context if the stream video was replaced / navigated away.
+    if (active && (!active.video.isConnected || !active.canvas.isConnected)) {
+      disposeActive();
+    }
+    attachProcessor(primaryVideo());
   }
 
   function enable() {
@@ -373,18 +417,15 @@
 
   function disable() {
     config.enabled = false;
-    allVideos().forEach(detach);
+    disposeActive();
+    disposeStrayCanvases();
   }
 
   function updateConfig(partial) {
     Object.assign(config, partial);
     if ('enabled' in partial) {
-      if (config.enabled) {
-        allVideos().forEach(v => { delete v.dataset.orangePatched; });
-        apply();
-      } else {
-        disable();
-      }
+      if (config.enabled) apply();
+      else disable();
     }
   }
 
