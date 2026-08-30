@@ -52,16 +52,12 @@ function syncOutputs() {
   els.pinkSenseOut.textContent = fmt(els.pinkSense.value);
 }
 
-function persistAndBroadcast() {
+function persist() {
   const settings = readUi();
   document.body.classList.toggle('is-off', !settings.enabled);
   syncOutputs();
+  // Content script listens via chrome.storage.onChanged
   chrome.storage.sync.set(settings);
-  chrome.tabs.query({ active: true, currentWindow: true }, (tabs) => {
-    const tab = tabs[0];
-    if (!tab?.id) return;
-    chrome.tabs.sendMessage(tab.id, { type: 'pool-color-update', settings }).catch(() => {});
-  });
 }
 
 chrome.storage.sync.get(DEFAULTS, (stored) => {
@@ -70,12 +66,12 @@ chrome.storage.sync.get(DEFAULTS, (stored) => {
   writeUi(settings);
 });
 
-els.enabled.addEventListener('change', persistAndBroadcast);
+els.enabled.addEventListener('change', persist);
 ['orangeSat', 'orangeSense', 'pinkSat', 'pinkSense'].forEach((id) => {
-  els[id].addEventListener('input', persistAndBroadcast);
+  els[id].addEventListener('input', persist);
 });
 
 els.reset.addEventListener('click', () => {
   writeUi(DEFAULTS);
-  persistAndBroadcast();
+  persist();
 });

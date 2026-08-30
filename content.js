@@ -221,7 +221,6 @@
 
   function detach(video) {
     video.style.opacity = '';
-    video.style.removeProperty('filter');
     delete video.dataset.orangePatched;
     video.parentNode?.querySelectorAll('[data-pool-color-canvas]').forEach(el => {
       el._poolStop = true;
@@ -233,7 +232,6 @@
     if (!config.enabled) return;
     if (video.dataset.orangePatched) return;
     video.dataset.orangePatched = '1';
-    video.style.removeProperty('filter');
 
     const parent = video.parentNode;
     if (!parent) return;
@@ -403,6 +401,7 @@
 
   window.__poolColor = { config, DEFAULTS, apply, enable, disable, updateConfig };
 
+  // Popup writes chrome.storage.sync; we pick up changes here (no extra messaging).
   chrome.storage.onChanged.addListener((changes, area) => {
     if (area !== 'sync') return;
     const partial = {};
@@ -410,12 +409,6 @@
       partial[key] = changes[key].newValue;
     }
     updateConfig(partial);
-  });
-
-  chrome.runtime.onMessage.addListener((msg) => {
-    if (msg?.type === 'pool-color-update' && msg.settings) {
-      updateConfig(msg.settings);
-    }
   });
 
   let debounceTimer = null;
