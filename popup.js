@@ -91,10 +91,25 @@ function syncDisabledState() {
   els.cyanSection.classList.toggle('is-disabled', masterOff || !els.cyanEnabled.checked);
 }
 
-function persist() {
+// chrome.storage.sync allows ~120 writes/min — slider "input" fires far more often.
+let saveTimer = null;
+
+function persistNow() {
+  clearTimeout(saveTimer);
+  saveTimer = null;
   syncOutputs();
   syncDisabledState();
   chrome.storage.sync.set(readUi());
+}
+
+function persistDebounced() {
+  syncOutputs();
+  syncDisabledState();
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    chrome.storage.sync.set(readUi());
+  }, 100);
 }
 
 chrome.storage.sync.get(DEFAULTS, (stored) => {
@@ -103,15 +118,18 @@ chrome.storage.sync.get(DEFAULTS, (stored) => {
   writeUi(settings);
 });
 
-els.enabled.addEventListener('change', persist);
-els.orangeEnabled.addEventListener('change', persist);
-els.pinkEnabled.addEventListener('change', persist);
-els.cyanEnabled.addEventListener('change', persist);
-['orangeSat', 'orangeSense', 'pinkSat', 'pinkSense', 'cyanSat', 'cyanSense'].forEach((id) => {
-  els[id].addEventListener('input', persist);
-});
-
+// Checkboxes / reset: write immediately
+els.enabled.addEventListener('change', persistNow);
+els.orangeEnabled.addEventListener('change', persistNow);
+els.pinkEnabled.addEventListener('change', persistNow);
+els.cyanEnabled.addEventListener('change', persistNow);
 els.reset.addEventListener('click', () => {
   writeUi(DEFAULTS);
-  persist();
+  persistNow();
+});
+
+// Sliders: debounce while dragging, flush on release
+['orangeSat', 'orangeSense', 'pinkSat', 'pinkSense', 'cyanSat', 'cyanSense'].forEach((id) => {
+  els[id].addEventListener('input', persistDebounced);
+  els[id].addEventListener('change', persistNow);
 });
