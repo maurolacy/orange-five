@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "Pool Ball Color Restoration",
-  "version": "2.0.3",
+  "version": "2.0.4",
   "description": "Best-effort WebGL remap: TV purple 5-ball → orange, pink 4-ball → purple.",
   "permissions": ["storage"],
   "icons": {

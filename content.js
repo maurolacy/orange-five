@@ -17,11 +17,13 @@
 
   const DEFAULTS = {
     enabled: true,
+    orangeEnabled: true,
+    pinkEnabled: true,
     orangeHue: 32 / 360,
     orangeSat: 0.60,
     orangeSatBoost: 1.7,
     orangeLift: 0.06,
-    orangeSense: 0.75, // higher = more selective
+    orangeSense: 0.75, // higher = more selective (does not disable; use orangeEnabled)
     mauveSatMin: 0.05,
     mauveSatMax: 0.48,
     purpleHue: 258 / 360,
@@ -74,6 +76,8 @@
     uniform float u_pinkSatMin;
     uniform float u_pinkBlueBias;
     uniform float u_pinkMinBlueRatio;
+    uniform float u_orangeEnabled;
+    uniform float u_pinkEnabled;
 
     vec3 rgb2hsl(vec3 c) {
       float maxc = max(max(c.r, c.g), c.b);
@@ -149,14 +153,14 @@
       float br = c.b / max(c.r, 0.001);
       bool hasPurpleRed = c.r > 0.10 && c.r > c.b * 0.22;
 
-      if (inViolet && s > 0.10 && hasPurpleRed) {
+      if (u_orangeEnabled > 0.5 && inViolet && s > 0.10 && hasPurpleRed) {
         outc = toOrange(s, l);
-      } else if (inPink && s >= max(u_pinkSatMin, 0.14)
+      } else if (u_pinkEnabled > 0.5 && inPink && s >= max(u_pinkSatMin, 0.14)
           && blueBias >= u_pinkBlueBias
           && br >= u_pinkMinBlueRatio
           && chroma > 0.12) {
         outc = toPurple(s, l);
-      } else if (inRose) {
+      } else if (u_orangeEnabled > 0.5 && inRose) {
         bool looksMauve = c.r > 0.10
           && c.g / c.r >= u_mauveRatio * 0.85
           && br >= u_mauveRatio * 0.85
@@ -326,6 +330,8 @@
       pinkSatMin: gl.getUniformLocation(prog, 'u_pinkSatMin'),
       pinkBlueBias: gl.getUniformLocation(prog, 'u_pinkBlueBias'),
       pinkMinBlueRatio: gl.getUniformLocation(prog, 'u_pinkMinBlueRatio'),
+      orangeEnabled: gl.getUniformLocation(prog, 'u_orangeEnabled'),
+      pinkEnabled: gl.getUniformLocation(prog, 'u_pinkEnabled'),
     };
 
     const tex = gl.createTexture();
@@ -374,6 +380,8 @@
           gl.uniform1f(locs.pinkSatMin, pinkSatMin());
           gl.uniform1f(locs.pinkBlueBias, pinkBlueBias());
           gl.uniform1f(locs.pinkMinBlueRatio, pinkMinBlueRatio());
+          gl.uniform1f(locs.orangeEnabled, config.orangeEnabled ? 1.0 : 0.0);
+          gl.uniform1f(locs.pinkEnabled, config.pinkEnabled ? 1.0 : 0.0);
           gl.drawArrays(gl.TRIANGLES, 0, 6);
         } catch (e) {
           if (!canvas.dataset.corsWarned) {

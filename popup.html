@@ -15,10 +15,15 @@
     </label>
   </header>
 
-  <p class="hint">Best-effort global remap. Higher selectivity = less spill. Toggle Off to compare.</p>
+  <p class="hint">Master Off bypasses everything. Each remap has its own enable. Higher selectivity = less spill.</p>
 
-  <section>
-    <h2>Purple → orange (5-ball)</h2>
+  <section id="orangeSection">
+    <h2>
+      <label class="section-toggle">
+        <input type="checkbox" id="orangeEnabled" checked />
+        Purple → orange (5-ball)
+      </label>
+    </h2>
     <label>
       Saturation
       <input type="range" id="orangeSat" min="0.3" max="1" step="0.01" />
@@ -31,8 +36,13 @@
     </label>
   </section>
 
-  <section>
-    <h2>Pink → purple (4-ball)</h2>
+  <section id="pinkSection">
+    <h2>
+      <label class="section-toggle">
+        <input type="checkbox" id="pinkEnabled" checked />
+        Pink → purple (4-ball)
+      </label>
+    </h2>
     <label>
       Saturation
       <input type="range" id="pinkSat" min="0.2" max="1" step="0.01" />

@@ -115,3 +115,28 @@ body.is-off section {
   opacity: 0.45;
   pointer-events: none;
 }
+
+section.is-disabled label:not(.section-toggle) {
+  opacity: 0.45;
+  pointer-events: none;
+}
+
+.section-toggle {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0;
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.section-toggle input {
+  width: 14px;
+  height: 14px;
+  accent-color: var(--accent);
+  flex-shrink: 0;
+}

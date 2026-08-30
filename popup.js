@@ -1,15 +1,24 @@
 const DEFAULTS = {
   enabled: true,
+  orangeEnabled: true,
+  pinkEnabled: true,
   orangeSat: 0.60,
   orangeSense: 0.75,
   pinkSat: 0.88,
   pinkSense: 0.50,
 };
 
-const KEYS = ['enabled', 'orangeSat', 'orangeSense', 'pinkSat', 'pinkSense'];
+const KEYS = [
+  'enabled', 'orangeEnabled', 'pinkEnabled',
+  'orangeSat', 'orangeSense', 'pinkSat', 'pinkSense',
+];
 
 const els = {
   enabled: document.getElementById('enabled'),
+  orangeEnabled: document.getElementById('orangeEnabled'),
+  pinkEnabled: document.getElementById('pinkEnabled'),
+  orangeSection: document.getElementById('orangeSection'),
+  pinkSection: document.getElementById('pinkSection'),
   orangeSat: document.getElementById('orangeSat'),
   orangeSatOut: document.getElementById('orangeSatOut'),
   orangeSense: document.getElementById('orangeSense'),
@@ -28,6 +37,8 @@ function fmt(n) {
 function readUi() {
   return {
     enabled: els.enabled.checked,
+    orangeEnabled: els.orangeEnabled.checked,
+    pinkEnabled: els.pinkEnabled.checked,
     orangeSat: Number(els.orangeSat.value),
     orangeSense: Number(els.orangeSense.value),
     pinkSat: Number(els.pinkSat.value),
@@ -37,12 +48,14 @@ function readUi() {
 
 function writeUi(settings) {
   els.enabled.checked = !!settings.enabled;
+  els.orangeEnabled.checked = settings.orangeEnabled !== false;
+  els.pinkEnabled.checked = settings.pinkEnabled !== false;
   els.orangeSat.value = settings.orangeSat;
   els.orangeSense.value = settings.orangeSense;
   els.pinkSat.value = settings.pinkSat;
   els.pinkSense.value = settings.pinkSense;
   syncOutputs();
-  document.body.classList.toggle('is-off', !settings.enabled);
+  syncDisabledState();
 }
 
 function syncOutputs() {
@@ -52,12 +65,17 @@ function syncOutputs() {
   els.pinkSenseOut.textContent = fmt(els.pinkSense.value);
 }
 
+function syncDisabledState() {
+  const masterOff = !els.enabled.checked;
+  document.body.classList.toggle('is-off', masterOff);
+  els.orangeSection.classList.toggle('is-disabled', masterOff || !els.orangeEnabled.checked);
+  els.pinkSection.classList.toggle('is-disabled', masterOff || !els.pinkEnabled.checked);
+}
+
 function persist() {
-  const settings = readUi();
-  document.body.classList.toggle('is-off', !settings.enabled);
   syncOutputs();
-  // Content script listens via chrome.storage.onChanged
-  chrome.storage.sync.set(settings);
+  syncDisabledState();
+  chrome.storage.sync.set(readUi());
 }
 
 chrome.storage.sync.get(DEFAULTS, (stored) => {
@@ -67,6 +85,8 @@ chrome.storage.sync.get(DEFAULTS, (stored) => {
 });
 
 els.enabled.addEventListener('change', persist);
+els.orangeEnabled.addEventListener('change', persist);
+els.pinkEnabled.addEventListener('change', persist);
 ['orangeSat', 'orangeSense', 'pinkSat', 'pinkSense'].forEach((id) => {
   els[id].addEventListener('input', persist);
 });
