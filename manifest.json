@@ -1,12 +1,23 @@
 {
   "manifest_version": 3,
   "name": "Pool Ball Color Restoration",
-  "version": "2.0.0",
+  "version": "2.0.1",
   "description": "Best-effort WebGL remap: TV purple 5-ball → orange, pink 4-ball → purple.",
   "permissions": ["storage", "activeTab"],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
   "action": {
     "default_popup": "popup.html",
-    "default_title": "Pool Color Restorer"
+    "default_title": "Pool Color Restorer",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    }
   },
   "content_scripts": [
     {

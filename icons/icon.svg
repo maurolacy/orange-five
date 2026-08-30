@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" fill="none">
+  <!-- Solid orange 5-ball -->
+  <defs>
+    <radialGradient id="ball" cx="38%" cy="32%" r="65%">
+      <stop offset="0%" stop-color="#ffb35a"/>
+      <stop offset="45%" stop-color="#f07820"/>
+      <stop offset="100%" stop-color="#c45a0e"/>
+    </radialGradient>
+    <radialGradient id="shine" cx="32%" cy="28%" r="40%">
+      <stop offset="0%" stop-color="#ffffff" stop-opacity="0.55"/>
+      <stop offset="55%" stop-color="#ffffff" stop-opacity="0.08"/>
+      <stop offset="100%" stop-color="#ffffff" stop-opacity="0"/>
+    </radialGradient>
+  </defs>
+  <circle cx="64" cy="64" r="60" fill="url(#ball)"/>
+  <circle cx="64" cy="64" r="60" fill="url(#shine)"/>
+  <!-- Number circle -->
+  <circle cx="64" cy="64" r="26" fill="#f7f4ef"/>
+  <text x="64" y="64" text-anchor="middle" dominant-baseline="central"
+        font-family="Georgia, 'Times New Roman', serif" font-size="36" font-weight="700"
+        fill="#1a1a1a">5</text>
+</svg>
