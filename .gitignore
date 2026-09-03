@@ -1,0 +1,9 @@
+# Node
+node_modules/
+
+# Debug output (traces, view PNGs) — disposable
+harness/debug/
+.ofd-out/
+
+# OS noise
+.DS_Store
