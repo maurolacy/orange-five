@@ -58,13 +58,23 @@
     return out;
   }
 
-  /** Mid-grey, slightly blue: felt seed (cloth.rs is_felt_seed). */
-  function isFeltSeed(r, g, b) {
+  /**
+   * Grey-blue felt seed. Tournament Black felt is consistently blue-dominant
+   * (B ≥ G > R); measured cloth RGBs across refs: [136..177, 148..187,
+   * 162..192]. A neutral grey shirt (B−R ≈ 2) must not seed, or the median
+   * anchors on the shirt and the whole classification follows it.
+   *
+   * dim: dark-arena frames (fail1) have felt at L ≈ 0.2–0.35 — the bright
+   * studio band [0.38, 0.72] misses it. The caller retries with dim=true
+   * when the strict seed finds too little; chromaticity is the invariant.
+   */
+  function isFeltSeed(r, g, b, dim) {
     const max = Math.max(r, g, b), min = Math.min(r, g, b);
     if (max - min > 56) return false;         // s <= 0.22 worst-case bound
-    if (b < r - 8) return false;              // blue not below red - 8
+    if (b - r < 12) return false;             // must lean blue, not neutral
+    if (b < g) return false;                  // B ≥ G: blue over green
     rgbToHsl(r, g, b, HSL);
-    return HSL[2] >= 0.38 && HSL[2] <= 0.72 && HSL[1] <= 0.22;
+    return HSL[2] >= (dim ? 0.15 : 0.38) && HSL[2] <= 0.72 && HSL[1] <= 0.22;
   }
 
   /** Chromaticity distance, both normalised by own sum (cloth.rs). */
@@ -78,16 +88,22 @@
     );
   }
 
-  /** Felt keeps chromaticity; lightness band around the seed (lighting-tolerant
-   * downward, capped upward so the white cue stays non-felt). */
-  function looksLikeCloth(r, g, b, cloth, clothL, thresh) {
+  /** Felt keeps chromaticity; lightness band around the seed. Downward
+   * tolerance covers lighting falloff (ref2's dark end sits ~0.35 below the
+   * seed) but must NOT reach dark-grey shirts; capped upward so the white
+   * cue stays non-felt. */
+  function looksLikeCloth(r, g, b, cloth, clothL, thresh, dim, chromaExtra) {
     rgbToHsl(r, g, b, HSL);
-    const chromaMax = 0.028 + thresh / 900;
-    const lDown = 0.12 + thresh / 160;
+    const chromaMax = 0.028 + thresh / 900 + (chromaExtra || 0);
+    // Bright studio frames: tight band below the anchor (0.114 at thresh=32 —
+    // the old 0.32 band swallowed dark grey shirts). Dark arenas (dim): the
+    // spotlight gradient drags corner felt to L ≈ 0.11–0.13 vs anchor ≈ 0.28,
+    // so allow a proportionally deeper descent.
+    const lDown = (dim ? 0.20 : 0.05) + thresh / 500;
     const lUp = 0.16;
     return HSL[1] <= 0.28 &&
       chromaDist(r, g, b, cloth) <= chromaMax &&
-      HSL[2] >= Math.max(clothL - lDown, 0.12) &&
+      HSL[2] >= Math.max(clothL - lDown, 0.08) &&
       HSL[2] <= Math.min(clothL + lUp, 0.80);
   }
 
@@ -131,14 +147,13 @@
     return 0;
   }
 
-  /** Square-kernel dilate/erode, radius 2 (cloth.rs morph_op + close). */
-  function morphClose(src, w, h, radius) {
-    const tmp = new Uint8Array(src.length);
-    // dilate
+  /** Square-kernel dilate (radius r). */
+  function dilate(src, w, h, r) {
+    const out = new Uint8Array(src.length);
     for (let y = 0; y < h; y++) {
-      const y0 = Math.max(0, y - radius), y1 = Math.min(h - 1, y + radius);
+      const y0 = Math.max(0, y - r), y1 = Math.min(h - 1, y + r);
       for (let x = 0; x < w; x++) {
-        const x0 = Math.max(0, x - radius), x1 = Math.min(w - 1, x + radius);
+        const x0 = Math.max(0, x - r), x1 = Math.min(w - 1, x + r);
         let any = 0;
         for (let yy = y0; yy <= y1 && !any; yy++) {
           const row = yy * w;
@@ -146,26 +161,43 @@
             if (src[row + xx]) { any = 1; break; }
           }
         }
-        tmp[y * w + x] = any;
+        out[y * w + x] = any;
       }
     }
-    // erode
+    return out;
+  }
+
+  /** Square-kernel erode (radius r). */
+  function erode(src, w, h, r) {
     const out = new Uint8Array(src.length);
     for (let y = 0; y < h; y++) {
-      const y0 = Math.max(0, y - radius), y1 = Math.min(h - 1, y + radius);
+      const y0 = Math.max(0, y - r), y1 = Math.min(h - 1, y + r);
       for (let x = 0; x < w; x++) {
-        const x0 = Math.max(0, x - radius), x1 = Math.min(w - 1, x + radius);
+        const x0 = Math.max(0, x - r), x1 = Math.min(w - 1, x + r);
         let all = 1;
         for (let yy = y0; yy <= y1 && all; yy++) {
           const row = yy * w;
           for (let xx = x0; xx <= x1; xx++) {
-            if (!tmp[row + xx]) { all = 0; break; }
+            if (!src[row + xx]) { all = 0; break; }
           }
         }
         out[y * w + x] = all;
       }
     }
     return out;
+  }
+
+  /** Close = dilate → erode: bridges small gaps in the felt (baulk line, spots). */
+  function morphClose(src, w, h, radius) {
+    return erode(dilate(src, w, h, radius), w, h, radius);
+  }
+
+  /**
+   * Open = erode → dilate: severs thin necks (player↔table bridges, rails
+   * touching the slate) while keeping big blobs intact.
+   */
+  function morphOpen(src, w, h, r) {
+    return dilate(erode(src, w, h, r), w, h, r);
   }
 
   /** Keep only the largest 4-connected component (in place). */
@@ -240,23 +272,56 @@
   function analyseData(data, w, h, thresh) {
     const n = w * h;
     // 1. Seed: median of grey-blue felt-like pixels (falls back to global
-    //    median when few — mirrors cloth.rs).
+    //    median when few — mirrors cloth.rs). Two-pass: bright-studio band
+    //    first; if the frame is a dark arena (fail1: felt at L ≈ 0.2–0.35)
+    //    the strict band finds too little, so retry with the lightness floor
+    //    dropped. Chromaticity (B ≥ G > R, low sat) is the lighting-robust
+    //    invariant; absolute lightness is not.
+    const minSeed = Math.max((n / 50) | 0, 200);
     let seedCount = 0;
     for (let i = 0, p = 0; i < n; i++, p += 4) {
       if (isFeltSeed(data[p], data[p + 1], data[p + 2])) seedCount++;
     }
-    const useSeed = seedCount > Math.max((n / 50) | 0, 200);
+    let dim = false;
+    if (seedCount <= minSeed) {
+      seedCount = 0;
+      for (let i = 0, p = 0; i < n; i++, p += 4) {
+        if (isFeltSeed(data[p], data[p + 1], data[p + 2], true)) seedCount++;
+      }
+      dim = seedCount > minSeed;
+    }
+    const useSeed = seedCount > minSeed;
     const rough = useSeed
-      ? medianRgbMasked(data, w, h, (i, r, g, b) => isFeltSeed(r, g, b))
+      ? medianRgbMasked(data, w, h, (i, r, g, b) => isFeltSeed(r, g, b, dim))
       : medianRgb(data, null, n);
 
-    // 2. Classify twice (rough, then refined median) — cloth.rs.
-    let felt = classifyAll(data, w, h, rough, thresh);
-    const clothRgb = medianRgb(data, felt, n);
-    felt = classifyAll(data, w, h, clothRgb, thresh);
+    // 2. Classify twice (rough, then refined median) — cloth.rs. In dim mode
+    //    the seed median lands between bed felt and the blue-lit surround
+    //    (spotlight gradient), so chroma refinement needs coarse-to-fine
+    //    steps to walk the anchor down onto the bed felt; a single tight
+    //    pass stalls (anchor distance 0.27 vs gate 0.07 → nothing passes).
+    const steps = dim ? [0.30, 0.12, 0] : [0];
+    let felt = null;
+    let clothRgb = rough;
+    for (const extra of steps) {
+      felt = classifyAll(data, w, h, clothRgb, thresh, dim, extra);
+      clothRgb = medianRgb(data, felt, n);
+    }
+    felt = classifyAll(data, w, h, clothRgb, thresh, dim, 0);
 
-    // 3. Morph close, keep largest component.
-    felt = morphClose(felt, w, h, 2);
+    // 3. Morphology: close bridges felt gaps (baulk line, spots); open severs
+    //    thin necks — a grey shirt leaning over the rail would otherwise weld
+    //    the player to the slate (largest-component then keeps only the bed).
+    //    Radii scale with the working width: table.js downsamples to ≤480 px,
+    //    so a fixed radius from the Rust lab (≥1200 px) would be ~3× too big.
+    const closeR = Math.max(1, Math.round(2 * w / 1200));
+    const openR = Math.max(2, Math.round(6 * w / 1200));
+    felt = morphClose(felt, w, h, closeR);
+    keepLargestComponent(felt, w, h);
+    // Open AFTER largest component: protrusions welded to the slate (a player
+    // leaning over the rail) are thinner than the bed — opening rounds them
+    // off, then we re-pick the largest so the bed is what survives.
+    felt = morphOpen(felt, w, h, openR);
     keepLargestComponent(felt, w, h);
 
     // 4. Border flood: reachable-from-outside vs enclosed.
@@ -280,13 +345,13 @@
     };
   }
 
-  function classifyAll(data, w, h, cloth, thresh) {
+  function classifyAll(data, w, h, cloth, thresh, dim, chromaExtra) {
     const out = new Uint8Array(w * h);
     // Felt HSL lightness — the anchor for the lightness band.
     const rf = cloth[0] / 255, gf = cloth[1] / 255, bf = cloth[2] / 255;
     const clothL = (Math.max(rf, gf, bf) + Math.min(rf, gf, bf)) / 2;
     for (let i = 0, p = 0; i < out.length; i++, p += 4) {
-      out[i] = looksLikeCloth(data[p], data[p + 1], data[p + 2], cloth, clothL, thresh) ? 1 : 0;
+      out[i] = looksLikeCloth(data[p], data[p + 1], data[p + 2], cloth, clothL, thresh, dim, chromaExtra) ? 1 : 0;
     }
     return out;
   }

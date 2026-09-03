@@ -77,6 +77,7 @@
     uniform sampler2D u_tex;
     uniform sampler2D u_mask;      // table region, R8, LINEAR upsampled
     uniform float u_hasMask;       // 1.0 = table gate active
+    uniform float u_maskOk;        // 1.0 = table found in the last cycle
     uniform float u_debugMask;     // 1.0 = paint the mask instead of video
     uniform float u_orangeHue;
     uniform float u_orangeSat;
@@ -159,7 +160,13 @@
       vec3 c = tex.rgb;
 
       // Table gate: outside the region, either passthrough or debug paint.
+      // u_maskOk = 0 (no table found) → no remap anywhere; in debug view,
+      // paint the whole frame black as an explicit "searching" signal.
       float inTable = 1.0;
+      if (u_hasMask > 0.5 && u_maskOk < 0.5) {
+        gl_FragColor = u_debugMask > 0.5 ? vec4(0.0, 0.0, 0.0, 1.0) : tex;
+        return;
+      }
       if (u_hasMask > 0.5) {
         float m = texture2D(u_mask, v_uv).r;
         inTable = m;
@@ -400,6 +407,7 @@
       cyanSatBoost: gl.getUniformLocation(prog, 'u_cyanSatBoost'),
       cyanSatMin: gl.getUniformLocation(prog, 'u_cyanSatMin'),
       hasMask: gl.getUniformLocation(prog, 'u_hasMask'),
+      maskOk: gl.getUniformLocation(prog, 'u_maskOk'),
       debugMask: gl.getUniformLocation(prog, 'u_debugMask'),
       uMask: gl.getUniformLocation(prog, 'u_mask'),
     };
@@ -465,7 +473,8 @@
           gl.uniform1i(locs.uMask, 1);
           gl.activeTexture(gl.TEXTURE0);
           gl.uniform1f(locs.hasMask,
-            ((config.tableEnabled || config.tableDebug) && tableState.available) ? 1.0 : 0.0);
+            ((config.tableEnabled || config.tableDebug) && tableState.available !== null) ? 1.0 : 0.0);
+          gl.uniform1f(locs.maskOk, tableState.available ? 1.0 : 0.0);
           gl.uniform1f(locs.orangeHue, config.orangeHue);
           gl.uniform1f(locs.orangeSat, config.orangeSat);
           gl.uniform1f(locs.orangeSatBoost, config.orangeSatBoost);
@@ -512,11 +521,16 @@
   // texture in between. "Nowhere" disables the gate for that cycle.
   // gl/maskTex come from attachProcessor's closure via setMaskTarget().
   const TABLE_EVERY_N = 15;
-  const tableState = { frame: 0, available: false, lastOk: 0, busy: false, gl: null, maskTex: null };
+  // available: null = never ran · false = last cycle found nothing · true = table found.
+  const tableState = { frame: 0, available: null, lastOk: 0, busy: false, gl: null, maskTex: null };
 
   function setMaskTarget(gl, maskTex) {
     tableState.gl = gl;
     tableState.maskTex = maskTex;
+    // Fresh processor: force a clean detector cycle instead of trusting a
+    // mask found by a previous (possibly disposed) context.
+    tableState.available = null;
+    tableState.frame = 0;
   }
 
   function maybeRunTableDetector(video) {
@@ -549,7 +563,7 @@
         gl.LUMINANCE, gl.UNSIGNED_BYTE, res.maskU8);
       gl.activeTexture(gl.TEXTURE0); // restore for the next video upload
     } else {
-      tableState.available = false; // "nowhere" — passthrough until next cycle
+      tableState.available = false; // "nowhere" — no remap + black debug until next cycle
     }
   }
 
@@ -579,6 +593,11 @@
 
   function updateConfig(partial) {
     Object.assign(config, partial);
+    if ('tableEnabled' in partial || 'tableDebug' in partial) {
+      // Fresh cycle on toggle: don't reuse a mask from before the switch.
+      tableState.frame = 0;
+      tableState.available = null;
+    }
     if ('enabled' in partial) {
       if (config.enabled) apply();
       else disable();
