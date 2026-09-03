@@ -74,7 +74,12 @@
     if (b - r < 12) return false;             // must lean blue, not neutral
     if (b < g) return false;                  // B ≥ G: blue over green
     rgbToHsl(r, g, b, HSL);
-    return HSL[2] >= (dim ? 0.15 : 0.38) && HSL[2] <= 0.72 && HSL[1] <= 0.22;
+    if (!dim) return HSL[2] >= 0.38 && HSL[2] <= 0.72 && HSL[1] <= 0.22;
+    // Dark arena: bed felt [19,23,44] has L≈0.12 and HSL sat≈0.40 (blue lean
+    // over a dark base) — the bright-frame sat cap and L floor both exclude
+    // it. Relax both; the b−r ≥ 12 + B ≥ G ordering still fences off neutral
+    // greys and red-brown floor [30,22,36] (b−r = 6).
+    return HSL[2] >= 0.08 && HSL[2] <= 0.55 && HSL[1] <= 0.45;
   }
 
   /** Chromaticity distance, both normalised by own sum (cloth.rs). */
@@ -296,18 +301,27 @@
       : medianRgb(data, null, n);
 
     // 2. Classify twice (rough, then refined median) — cloth.rs. In dim mode
-    //    the seed median lands between bed felt and the blue-lit surround
-    //    (spotlight gradient), so chroma refinement needs coarse-to-fine
-    //    steps to walk the anchor down onto the bed felt; a single tight
-    //    pass stalls (anchor distance 0.27 vs gate 0.07 → nothing passes).
-    const steps = dim ? [0.30, 0.12, 0] : [0];
-    let felt = null;
+    //    the frame mixes bed felt with blue-lit surround (spotlight gradient),
+    //    so a WIDE chroma gate admits surround pixels and drifts the anchor
+    //    off the bed. Trust the relaxed seed first (its median is bed felt);
+    //    only if the tight gate yields too little do we widen as fallback.
     let clothRgb = rough;
-    for (const extra of steps) {
-      felt = classifyAll(data, w, h, clothRgb, thresh, dim, extra);
+    let felt = classifyAll(data, w, h, clothRgb, thresh, dim, 0);
+    let tightCount = 0;
+    for (let i = 0; i < felt.length; i++) tightCount += felt[i];
+    if (tightCount < minSeed) {
+      // Tight gate too sparse: walk the anchor with widening steps.
+      const steps = dim ? [0.30, 0.12, 0] : [0];
+      for (const extra of steps) {
+        felt = classifyAll(data, w, h, clothRgb, thresh, dim, extra);
+        clothRgb = medianRgb(data, felt, n);
+      }
+      felt = classifyAll(data, w, h, clothRgb, thresh, dim, 0);
+    } else {
+      // Seed already on the bed: refine tightly, no widening needed.
       clothRgb = medianRgb(data, felt, n);
+      felt = classifyAll(data, w, h, clothRgb, thresh, dim, 0);
     }
-    felt = classifyAll(data, w, h, clothRgb, thresh, dim, 0);
 
     // 3. Morphology: close bridges felt gaps (baulk line, spots); open severs
     //    thin necks — a grey shirt leaning over the rail would otherwise weld
