@@ -20,6 +20,8 @@
     orangeEnabled: true,
     pinkEnabled: true,
     cyanEnabled: false, // optional: TV cyan 2-ball → blue
+    tableEnabled: true, // gate remaps to the detected table region
+    tableDebug: false,  // visualize the table mask instead of the video
     orangeHue: 32 / 360,
     orangeSat: 0.60,
     orangeSatBoost: 1.7,
@@ -73,6 +75,9 @@
     precision mediump float;
     varying vec2 v_uv;
     uniform sampler2D u_tex;
+    uniform sampler2D u_mask;      // table region, R8, LINEAR upsampled
+    uniform float u_hasMask;       // 1.0 = table gate active
+    uniform float u_debugMask;     // 1.0 = paint the mask instead of video
     uniform float u_orangeHue;
     uniform float u_orangeSat;
     uniform float u_orangeSatBoost;
@@ -152,6 +157,31 @@
     void main() {
       vec4 tex = texture2D(u_tex, v_uv);
       vec3 c = tex.rgb;
+
+      // Table gate: outside the region, either passthrough or debug paint.
+      float inTable = 1.0;
+      if (u_hasMask > 0.5) {
+        float m = texture2D(u_mask, v_uv).r;
+        inTable = m;
+        if (u_debugMask > 0.5) {
+          // Mask debug view (independent of m's exact value):
+          //   m >= 0.66 → felt (green) · 0.33–0.66 → enclosed hole (yellow)
+          //   m < 0.33 → outside the table (dark grey, clearly visible)
+          if (m >= 0.66) {
+            gl_FragColor = vec4(0.08, 0.40, 0.21, 1.0);
+          } else if (m >= 0.33) {
+            gl_FragColor = vec4(1.0, 0.83, 0.0, 1.0);
+          } else {
+            gl_FragColor = vec4(0.16, 0.16, 0.16, 1.0);
+          }
+          return;
+        }
+        if (inTable < 0.5) {
+          gl_FragColor = tex;
+          return;
+        }
+      }
+
       vec3 hsl = rgb2hsl(c);
       float h = hsl.x;
       float s = hsl.y;
@@ -277,6 +307,7 @@
       delete active.video.dataset.orangePatched;
     }
     active = null;
+    setMaskTarget(null, null); // uploads stop until a new processor attaches
   }
 
   function disposeStrayCanvases() {
@@ -368,6 +399,9 @@
       cyanSat: gl.getUniformLocation(prog, 'u_cyanSat'),
       cyanSatBoost: gl.getUniformLocation(prog, 'u_cyanSatBoost'),
       cyanSatMin: gl.getUniformLocation(prog, 'u_cyanSatMin'),
+      hasMask: gl.getUniformLocation(prog, 'u_hasMask'),
+      debugMask: gl.getUniformLocation(prog, 'u_debugMask'),
+      uMask: gl.getUniformLocation(prog, 'u_mask'),
     };
 
     const tex = gl.createTexture();
@@ -376,6 +410,17 @@
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
     gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+
+    // Table-region mask (R8-ish luminance texture, LINEAR upsampled by the GPU).
+    const maskTex = gl.createTexture();
+    gl.bindTexture(gl.TEXTURE_2D, maskTex);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+    gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.LINEAR);
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, 1, 1, 0, gl.LUMINANCE, gl.UNSIGNED_BYTE,
+      new Uint8Array([255])); // before first analysis: everything "inside"
+    setMaskTarget(gl, maskTex);
 
     let lastW = 0, lastH = 0;
 
@@ -396,6 +441,7 @@
 
         try {
           if (gl.isContextLost()) return;
+          gl.activeTexture(gl.TEXTURE0);
           gl.bindTexture(gl.TEXTURE_2D, tex);
           gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGB, gl.RGB, gl.UNSIGNED_BYTE, video);
         } catch (e) {
@@ -404,12 +450,22 @@
           return;
         }
 
+        maybeRunTableDetector(video);
+
         try {
           gl.useProgram(prog);
           gl.bindBuffer(gl.ARRAY_BUFFER, buf);
           gl.enableVertexAttribArray(aPos);
           gl.vertexAttribPointer(aPos, 2, gl.FLOAT, false, 0, 0);
+          gl.activeTexture(gl.TEXTURE0);
+          gl.bindTexture(gl.TEXTURE_2D, tex);
           gl.uniform1i(uTex, 0);
+          gl.activeTexture(gl.TEXTURE1);
+          gl.bindTexture(gl.TEXTURE_2D, tableState.maskTex);
+          gl.uniform1i(locs.uMask, 1);
+          gl.activeTexture(gl.TEXTURE0);
+          gl.uniform1f(locs.hasMask,
+            ((config.tableEnabled || config.tableDebug) && tableState.available) ? 1.0 : 0.0);
           gl.uniform1f(locs.orangeHue, config.orangeHue);
           gl.uniform1f(locs.orangeSat, config.orangeSat);
           gl.uniform1f(locs.orangeSatBoost, config.orangeSatBoost);
@@ -430,6 +486,7 @@
           gl.uniform1f(locs.cyanSat, config.cyanSat);
           gl.uniform1f(locs.cyanSatBoost, config.cyanSatBoost);
           gl.uniform1f(locs.cyanSatMin, cyanSatMin());
+          gl.uniform1f(locs.debugMask, config.tableDebug ? 1.0 : 0.0);
           gl.drawArrays(gl.TRIANGLES, 0, 6);
         } catch (e) {
           console.error('Orange Five: draw error.', e.message);
@@ -447,6 +504,52 @@
       video.requestVideoFrameCallback(draw);
     } else {
       requestAnimationFrame(draw);
+    }
+  }
+
+  // --- Table detector driving (table.js) ------------------------------------
+  // Re-analyse every Nth drawn frame (~0.5 s at 25–30 fps); reuse the mask
+  // texture in between. "Nowhere" disables the gate for that cycle.
+  // gl/maskTex come from attachProcessor's closure via setMaskTarget().
+  const TABLE_EVERY_N = 15;
+  const tableState = { frame: 0, available: false, lastOk: 0, busy: false, gl: null, maskTex: null };
+
+  function setMaskTarget(gl, maskTex) {
+    tableState.gl = gl;
+    tableState.maskTex = maskTex;
+  }
+
+  function maybeRunTableDetector(video) {
+    if (!window.__orangeFiveTable) return;
+    if (!config.tableEnabled && !config.tableDebug) return;
+    const gl = tableState.gl;
+    if (!gl) return;
+    tableState.frame++;
+    if (tableState.busy || tableState.frame % TABLE_EVERY_N !== 1) return;
+    tableState.busy = true;
+    let res = null;
+    try {
+      res = window.__orangeFiveTable.analyse(video);
+    } catch (e) {
+      console.warn('Orange Five: table detector failed.', e.message);
+    } finally {
+      tableState.busy = false;
+    }
+    if (res) {
+      tableState.available = true;
+      tableState.lastOk = performance.now();
+      // Upload on texture unit 1 — unit 0 holds the video texture during the
+      // draw loop; clobbering its binding flickers the mask onto the video.
+      gl.activeTexture(gl.TEXTURE1);
+      gl.bindTexture(gl.TEXTURE_2D, tableState.maskTex);
+      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); // mask widths are not %4
+      // maskU8: felt=255, enclosed hole=128, outside=0. The shader's gate
+      // (m >= 0.5) and the debug view's splits (0.66/0.33) both read this.
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, res.w, res.h, 0,
+        gl.LUMINANCE, gl.UNSIGNED_BYTE, res.maskU8);
+      gl.activeTexture(gl.TEXTURE0); // restore for the next video upload
+    } else {
+      tableState.available = false; // "nowhere" — passthrough until next cycle
     }
   }
 

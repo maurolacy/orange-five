@@ -3,6 +3,8 @@ const DEFAULTS = {
   orangeEnabled: true,
   pinkEnabled: true,
   cyanEnabled: false,
+  tableEnabled: true,
+  tableDebug: false,
   orangeSat: 0.60,
   orangeSense: 0.75,
   pinkSat: 0.88,
@@ -13,6 +15,7 @@ const DEFAULTS = {
 
 const KEYS = [
   'enabled', 'orangeEnabled', 'pinkEnabled', 'cyanEnabled',
+  'tableEnabled', 'tableDebug',
   'orangeSat', 'orangeSense', 'pinkSat', 'pinkSense',
   'cyanSat', 'cyanSense',
 ];
@@ -22,6 +25,9 @@ const els = {
   orangeEnabled: document.getElementById('orangeEnabled'),
   pinkEnabled: document.getElementById('pinkEnabled'),
   cyanEnabled: document.getElementById('cyanEnabled'),
+  tableEnabled: document.getElementById('tableEnabled'),
+  tableDebug: document.getElementById('tableDebug'),
+  tableSection: document.getElementById('tableSection'),
   orangeSection: document.getElementById('orangeSection'),
   pinkSection: document.getElementById('pinkSection'),
   cyanSection: document.getElementById('cyanSection'),
@@ -50,6 +56,8 @@ function readUi() {
     orangeEnabled: els.orangeEnabled.checked,
     pinkEnabled: els.pinkEnabled.checked,
     cyanEnabled: els.cyanEnabled.checked,
+    tableEnabled: els.tableEnabled.checked,
+    tableDebug: els.tableDebug.checked,
     orangeSat: Number(els.orangeSat.value),
     orangeSense: Number(els.orangeSense.value),
     pinkSat: Number(els.pinkSat.value),
@@ -64,6 +72,8 @@ function writeUi(settings) {
   els.orangeEnabled.checked = settings.orangeEnabled !== false;
   els.pinkEnabled.checked = settings.pinkEnabled !== false;
   els.cyanEnabled.checked = !!settings.cyanEnabled;
+  els.tableEnabled.checked = settings.tableEnabled !== false;
+  els.tableDebug.checked = !!settings.tableDebug;
   els.orangeSat.value = settings.orangeSat;
   els.orangeSense.value = settings.orangeSense;
   els.pinkSat.value = settings.pinkSat;
@@ -86,6 +96,7 @@ function syncOutputs() {
 function syncDisabledState() {
   const masterOff = !els.enabled.checked;
   document.body.classList.toggle('is-off', masterOff);
+  els.tableSection.classList.toggle('is-disabled', masterOff);
   els.orangeSection.classList.toggle('is-disabled', masterOff || !els.orangeEnabled.checked);
   els.pinkSection.classList.toggle('is-disabled', masterOff || !els.pinkEnabled.checked);
   els.cyanSection.classList.toggle('is-disabled', masterOff || !els.cyanEnabled.checked);
@@ -123,6 +134,8 @@ els.enabled.addEventListener('change', persistNow);
 els.orangeEnabled.addEventListener('change', persistNow);
 els.pinkEnabled.addEventListener('change', persistNow);
 els.cyanEnabled.addEventListener('change', persistNow);
+els.tableEnabled.addEventListener('change', persistNow);
+els.tableDebug.addEventListener('change', persistNow);
 els.reset.addEventListener('click', () => {
   writeUi(DEFAULTS);
   persistNow();
