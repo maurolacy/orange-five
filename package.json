@@ -1,0 +1,14 @@
+{
+  "name": "pool-color-restorer",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension: restore pool-ball colors on broadcast video (WNT). Tests cover the cloth/table detector and the experimental ball detector.",
+  "scripts": {
+    "test": "node --test tests/",
+    "test:table": "node --test tests/table.test.js",
+    "test:detector": "node --test tests/detector.test.js"
+  },
+  "devDependencies": {
+    "pngjs": "^7.0.0"
+  }
+}
