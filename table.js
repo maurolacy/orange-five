@@ -74,7 +74,10 @@
     if (b - r < 12) return false;             // must lean blue, not neutral
     if (b < g) return false;                  // B ≥ G: blue over green
     rgbToHsl(r, g, b, HSL);
-    if (!dim) return HSL[2] >= 0.38 && HSL[2] <= 0.72 && HSL[1] <= 0.22;
+    // L cap 0.85: fail2's lit bed is L≈0.75–0.82 (rails ≈0.55, same tint) —
+    // the old 0.72 cap locked the seed onto the rails only. Neutral bright
+    // surroundings stay fenced out by b−r ≥ 12 + B ≥ G + sat ≤ 0.22.
+    if (!dim) return HSL[2] >= 0.38 && HSL[2] <= 0.85 && HSL[1] <= 0.22;
     // Dark arena: bed felt [19,23,44] has L≈0.12 and HSL sat≈0.40 (blue lean
     // over a dark base) — the bright-frame sat cap and L floor both exclude
     // it. Relax both; the b−r ≥ 12 + B ≥ G ordering still fences off neutral
@@ -105,11 +108,11 @@
     // spotlight gradient drags corner felt to L ≈ 0.11–0.13 vs anchor ≈ 0.28,
     // so allow a proportionally deeper descent.
     const lDown = (dim ? 0.20 : 0.05) + thresh / 500;
-    const lUp = 0.16;
+    const lUp = 0.30;
     return HSL[1] <= 0.28 &&
       chromaDist(r, g, b, cloth) <= chromaMax &&
       HSL[2] >= Math.max(clothL - lDown, 0.08) &&
-      HSL[2] <= Math.min(clothL + lUp, 0.80);
+      HSL[2] <= Math.min(clothL + lUp, 0.86);
   }
 
   // --- Mask pipeline (port of cloth.rs analyse) -----------------------------
