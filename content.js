@@ -517,12 +517,18 @@
   }
 
   // --- Table detector driving (table.js) ------------------------------------
-  // Re-analyse every Nth drawn frame (~0.5 s at 25–30 fps); reuse the mask
-  // texture in between. "Nowhere" disables the gate for that cycle.
+  // Time-based cadence with adaptive backoff: aim to re-analyse every
+  // ~TABLE_MIN_PERIOD_MS, but never spend more than ~⅓ of wall time on the
+  // detector — if a run costs C ms, the next one waits max(period, 3×C).
+  // The mask texture is reused between runs; uploads are skipped when the
+  // mask is unchanged (static camera = identical mask most frames).
   // gl/maskTex come from attachProcessor's closure via setMaskTarget().
-  const TABLE_EVERY_N = 15;
+  const TABLE_MIN_PERIOD_MS = 100;
   // available: null = never ran · false = last cycle found nothing · true = table found.
-  const tableState = { frame: 0, available: null, lastOk: 0, busy: false, gl: null, maskTex: null };
+  const tableState = {
+    frame: 0, available: null, busy: false, gl: null, maskTex: null,
+    lastRun: 0, lastCostMs: 0, lastUpload: null, // lastUpload: last maskU8 ref
+  };
 
   function setMaskTarget(gl, maskTex) {
     tableState.gl = gl;
@@ -531,6 +537,8 @@
     // mask found by a previous (possibly disposed) context.
     tableState.available = null;
     tableState.frame = 0;
+    tableState.lastRun = 0;
+    tableState.lastUpload = null;
   }
 
   function maybeRunTableDetector(video) {
@@ -539,32 +547,56 @@
     const gl = tableState.gl;
     if (!gl) return;
     tableState.frame++;
-    if (tableState.busy || tableState.frame % TABLE_EVERY_N !== 1) return;
+    if (tableState.busy) return;
+    const now = performance.now();
+    const period = Math.max(TABLE_MIN_PERIOD_MS, 3 * tableState.lastCostMs);
+    if (now - tableState.lastRun < period) return;
+    tableState.lastRun = now;
     tableState.busy = true;
     let res = null;
+    const t0 = performance.now();
     try {
       res = window.__orangeFiveTable.analyse(video);
     } catch (e) {
       console.warn('Orange Five: table detector failed.', e.message);
     } finally {
       tableState.busy = false;
+      tableState.lastCostMs = performance.now() - t0;
     }
     if (res) {
       tableState.available = true;
-      tableState.lastOk = performance.now();
-      // Upload on texture unit 1 — unit 0 holds the video texture during the
-      // draw loop; clobbering its binding flickers the mask onto the video.
-      gl.activeTexture(gl.TEXTURE1);
-      gl.bindTexture(gl.TEXTURE_2D, tableState.maskTex);
-      gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); // mask widths are not %4
-      // maskU8: felt=255, enclosed hole=128, outside=0. The shader's gate
-      // (m >= 0.5) and the debug view's splits (0.66/0.33) both read this.
-      gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, res.w, res.h, 0,
-        gl.LUMINANCE, gl.UNSIGNED_BYTE, res.maskU8);
-      gl.activeTexture(gl.TEXTURE0); // restore for the next video upload
+      // Upload only if the mask actually changed (compare against the buffer
+      // we uploaded last time — ~150 KB memcmp is far cheaper than a texture
+      // upload every cycle). res.maskU8 is a fresh buffer per analyse() call.
+      if (res.maskU8 !== tableState.lastUpload &&
+          tableMasksEqual(res.maskU8, tableState.lastUpload)) {
+        // same mask: keep the texture as-is
+      } else {
+        tableState.lastUpload = res.maskU8;
+        // Upload on texture unit 1 — unit 0 holds the video texture during the
+        // draw loop; clobbering its binding flickers the mask onto the video.
+        gl.activeTexture(gl.TEXTURE1);
+        gl.bindTexture(gl.TEXTURE_2D, tableState.maskTex);
+        gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1); // mask widths are not %4
+        // maskU8: felt=255, enclosed hole=128, outside=0. The shader's gate
+        // (m >= 0.5) and the debug view's splits (0.66/0.33) both read this.
+        gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, res.w, res.h, 0,
+          gl.LUMINANCE, gl.UNSIGNED_BYTE, res.maskU8);
+        gl.activeTexture(gl.TEXTURE0); // restore for the next video upload
+      }
     } else {
       tableState.available = false; // "nowhere" — no remap + black debug until next cycle
     }
+  }
+
+  /** Byte-equality for same-length mask buffers (also handles null). */
+  function tableMasksEqual(a, b) {
+    if (a === b) return true;
+    if (!a || !b || a.length !== b.length) return false;
+    for (let i = 0; i < a.length; i++) {
+      if (a[i] !== b[i]) return false;
+    }
+    return true;
   }
 
   function apply() {
