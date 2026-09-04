@@ -6,7 +6,8 @@
   "scripts": {
     "test": "node --test tests/",
     "test:table": "node --test tests/table.test.js",
-    "test:detector": "node --test tests/detector.test.js"
+    "test:detector": "node --test tests/detector.test.js",
+    "table": "node harness/tableview.js"
   },
   "devDependencies": {
     "pngjs": "^7.0.0"
