@@ -128,8 +128,9 @@ test('ball close: round bite from the border is absorbed into the felt', () => {
 test('ball bump: outer half of a boundary ball is completed as a hole', () => {
   const f = synthFrame(480, 320);
   // Felt covers x < 288; dark room x ≥ 288. Ball of r=12 centred ON the
-  // boundary: close fills the felt-side half (bite), the bump dilation must
-  // cover the outer half over the "rail".
+  // boundary: close fills the felt-side half (bite); the bump must complete
+  // the ball (outer edge ≈ x=300) but NOT run ballR past it laterally —
+  // the old per-pixel disc stamping reached ~x=315 (~2× too wide).
   f.rect(288, 0, 479, 319, DARK);
   f.disc(288, 160, 12, WHITE);
   const res = table.analyseData(f.data, 480, 320, THRESH);
@@ -138,6 +139,9 @@ test('ball bump: outer half of a boundary ball is completed as a hole', () => {
   assert.equal(res.region[outer], 1, 'outer half joins the remap region');
   assert.equal(res.maskU8[outer], 128, 'outer half encoded as hole');
   assert.ok(res.bumps[outer], 'outer half marked as bump');
+  // Tightness: the bump ends within ~2px of the ball's outer edge (x=300).
+  assert.ok(!res.bumps[160 * 480 + 303], 'bump does not over-run the ball edge');
+  assert.ok(!res.region[160 * 480 + 306], 'no ballR over-run past the ball');
   // Deep room stays out.
   const deep = 160 * 480 + 400;
   assert.equal(res.region[deep], 0, 'deep room stays outside the region');

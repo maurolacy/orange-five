@@ -307,11 +307,11 @@
   // edge-cut balls still pass. A closed fist on the bed can still pass —
   // accepted trade-off (a brief skin paint beats missing rail balls).
   const BORDER_FILL = {
-    minArea: 24,     // below this it's specks/noise — harmless but pointless
+    minArea: 48,     // below this it's specks/noise — harmless but pointless
     minAbs: 1500,    // absolute cap floor (small frames / small felt)
-    maxRel: 0.20,    // …and never above 20% of the felt area
-    minFill: 0.45,   // area / bbox area (full disk ≈0.79, half-disk ≈0.79)
-    maxAspect: 2.5,  // bbox elongation (half-disk is 2.0)
+    maxRel: 0.12,    // …and never above 12% of the felt area
+    minFill: 0.55,   // area / bbox area (full disk ≈0.79, half-disk ≈0.79)
+    maxAspect: 2.0,  // bbox elongation (half-disk is 2.0)
   };
 
   /**
@@ -486,11 +486,94 @@
     const bumps = new Uint8Array(n);
     let bumpCount = 0;
     {
+      // Close-added pixels. The close also SMOOTHS classifier-boundary
+      // jaggedness into long thin runs (esp. along near-horizontal band
+      // edges); bumping those made horizontal strips of ball height — the
+      // live "over-extends horizontally" symptom. So first keep only the
+      // ball-like blobs of `added`: compact, ball-scaled area, bbox aspect
+      // ≤ 2. Long thin runs fail the aspect gate and are not bumped.
       const added = new Uint8Array(n);
       for (let i = 0; i < n; i++) added[i] = felt[i] && !preBallClose[i] ? 1 : 0;
-      const grown = dilate(added, w, h, ballR);
-      for (let i = 0; i < n; i++) {
-        if (grown[i] && !felt[i]) { bumps[i] = 1; bumpCount++; }
+      const comp = new Int32Array(n);
+      const queue = new Int32Array(n);
+      const pixels = [];                 // current component's pixel indices
+      const compOk = [];                 // per component id: ball-like?
+      let nextId = 1;
+      for (let start = 0; start < n; start++) {
+        if (!added[start] || comp[start]) continue;
+        let qh = 0, qt = 0;
+        comp[start] = nextId;
+        queue[qt++] = start;
+        pixels.length = 0;
+        let minx = w, maxx = -1, miny = h, maxy = -1;
+        while (qh < qt) {
+          const i = queue[qh++];
+          pixels.push(i);
+          const x = i % w, y = (i / w) | 0;
+          if (x < minx) minx = x; if (x > maxx) maxx = x;
+          if (y < miny) miny = y; if (y > maxy) maxy = y;
+          if (x > 0 && added[i - 1] && !comp[i - 1]) { comp[i - 1] = nextId; queue[qt++] = i - 1; }
+          if (x < w - 1 && added[i + 1] && !comp[i + 1]) { comp[i + 1] = nextId; queue[qt++] = i + 1; }
+          if (y > 0 && added[i - w] && !comp[i - w]) { comp[i - w] = nextId; queue[qt++] = i - w; }
+          if (y < h - 1 && added[i + w] && !comp[i + w]) { comp[i + w] = nextId; queue[qt++] = i + w; }
+        }
+        const bw = maxx - minx + 1, bh = maxy - miny + 1;
+        const hi = Math.max(bw, bh), lo = Math.min(bw, bh);
+        // Half-disk bites (ball centred on the boundary) are aspect ≈ 2.0+ε —
+        // gate ABOVE that. Jagged-boundary smoothing runs are thin & long
+        // (aspect ≥ 4 for anything that passes the area range) → rejected.
+        compOk[nextId] = pixels.length >= Math.max(40, (ballR * ballR / 4) | 0) &&
+          pixels.length <= ballR * ballR * 2.5 &&
+          pixels.length / (bw * bh) >= 0.5 &&
+          hi / lo <= 2.6 ? 1 : 0;
+        if (compOk[nextId]) {
+          // Complete the ball geometrically: the bite ≈ the ball's felt-side
+          // half-disk, so its long bbox axis ≈ the ball diameter and its flat
+          // edge (the side with the most non-felt just outside) sits on the
+          // felt boundary ≈ through the ball centre. One disc of radius rb at
+          // the chord midpoint ≈ the full ball — vs stamping every bite pixel
+          // with a ballR disc, which ran (rb+ballR)/rb ≈ 2× too wide.
+          const rb = Math.min(Math.max(bw, bh) / 2 + 1, ballR + 1);
+          const midx = (minx + maxx) >> 1, midy = (miny + maxy) >> 1;
+          // Flat side = bbox edge with the most non-felt just outside
+          // (out-of-frame counts as non-felt → frame-edge bites handled).
+          const outCount = (x0, x1, y0, y1) => {
+            let c = 0;
+            for (let y = y0; y <= y1; y++) {
+              for (let x = x0; x <= x1; x++) {
+                if (x < 0 || x >= w || y < 0 || y >= h) { c++; continue; }
+                if (!felt[y * w + x]) c++;
+              }
+            }
+            return c;
+          };
+          const s = 2;
+          const sides = [
+            ['l', outCount(minx - s, minx - 1, miny, maxy)],
+            ['r', outCount(maxx + 1, maxx + s, miny, maxy)],
+            ['t', outCount(minx, maxx, miny - s, miny - 1)],
+            ['b', outCount(minx, maxx, maxy + 1, maxy + s)],
+          ];
+          sides.sort((a, b) => b[1] - a[1]);
+          let cx, cy;
+          if (sides[0][0] === 'l') { cx = minx; cy = midy; }
+          else if (sides[0][0] === 'r') { cx = maxx; cy = midy; }
+          else if (sides[0][0] === 't') { cx = midx; cy = miny; }
+          else { cx = midx; cy = maxy; }
+          const R = Math.ceil(rb);
+          for (let dy = -R; dy <= R; dy++) {
+            const yy = cy + dy;
+            if (yy < 0 || yy >= h) continue;
+            const span = Math.floor(Math.sqrt(R * R - dy * dy));
+            const x0 = Math.max(0, cx - span), x1 = Math.min(w - 1, cx + span);
+            const row = yy * w;
+            for (let xx = x0; xx <= x1; xx++) {
+              const j = row + xx;
+              if (!felt[j] && !bumps[j]) { bumps[j] = 1; bumpCount++; }
+            }
+          }
+        }
+        nextId++;
       }
     }
 
