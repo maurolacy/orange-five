@@ -463,6 +463,7 @@
     let preCount = 0;
     for (let i = 0; i < n; i++) preCount += felt[i];
     const ballR = Math.min(28, Math.max(12, Math.round(0.05 * Math.sqrt(preCount))));
+    const preBallClose = felt;
     felt = morphClose(felt, w, h, ballR);
 
     // 4. Border flood: reachable-from-outside vs enclosed.
@@ -477,7 +478,24 @@
     const { filled, filledCount } =
       fillBorderHoles(felt, fromBorder, w, h, feltCount);
 
-    // 5. Remap region = felt OR enclosed non-felt OR filled border holes.
+    // 4.6 Complete the ball: the close (3b) fills only the felt-side half of
+    //     a rail ball; the outer half sits over the rail, outside the region,
+    //     and never remaps. Dilate the close-added pixels by ballR — a filled
+    //     bite grows into a full-ball bump. Bumps are holes (mask 128), not
+    //     felt: same remap outcome, debug stays truthful about cloth.
+    const bumps = new Uint8Array(n);
+    let bumpCount = 0;
+    {
+      const added = new Uint8Array(n);
+      for (let i = 0; i < n; i++) added[i] = felt[i] && !preBallClose[i] ? 1 : 0;
+      const grown = dilate(added, w, h, ballR);
+      for (let i = 0; i < n; i++) {
+        if (grown[i] && !felt[i]) { bumps[i] = 1; bumpCount++; }
+      }
+    }
+
+    // 5. Remap region = felt OR enclosed non-felt OR filled border holes OR
+    //    completed-ball bumps.
     // maskU8 is the texture encoding: felt=255, enclosed/filled hole=128,
     // outside=0. (LUMINANCE texture normalises byte/255; the shader gates on
     // >=0.5 and the debug view splits at 0.66/0.33 — holes at 0.502 fall in
@@ -486,13 +504,13 @@
     const maskU8 = new Uint8Array(n);
     for (let i = 0; i < n; i++) {
       if (felt[i]) { region[i] = 1; maskU8[i] = 255; }
-      else if (filled[i] || !fromBorder[i]) { region[i] = 1; maskU8[i] = 128; }
+      else if (filled[i] || bumps[i] || !fromBorder[i]) { region[i] = 1; maskU8[i] = 128; }
     }
     return {
       w, h, clothRgb,
-      felt, region, maskU8, fromBorder, filled,
+      felt, region, maskU8, fromBorder, filled, bumps,
       feltFraction: feltCount / n,
-      filledCount,
+      filledCount, bumpCount,
     };
   }
 
@@ -530,13 +548,14 @@
   }
 
   /** Debug paint: felt green, enclosed yellow, filled border holes orange,
-   * outside grey. */
+   * completed-ball bumps magenta, outside grey. */
   function debugImage(res) {
     const id = new ImageData(res.w, res.h);
     for (let i = 0; i < res.w * res.h; i++) {
       const p = i * 4;
       if (res.felt[i]) { id.data[p] = 20; id.data[p + 1] = 102; id.data[p + 2] = 54; }
       else if (res.filled && res.filled[i]) { id.data[p] = 255; id.data[p + 1] = 140; id.data[p + 2] = 0; }
+      else if (res.bumps && res.bumps[i]) { id.data[p] = 220; id.data[p + 1] = 0; id.data[p + 2] = 220; }
       else if (!res.fromBorder[i]) { id.data[p] = 255; id.data[p + 1] = 212; id.data[p + 2] = 0; }
       else { id.data[p] = 40; id.data[p + 1] = 40; id.data[p + 2] = 40; }
       id.data[p + 3] = 255;

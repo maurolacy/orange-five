@@ -125,6 +125,24 @@ test('ball close: round bite from the border is absorbed into the felt', () => {
   assert.equal(res.region[bite], 1, 'bite is inside the remap region');
 });
 
+test('ball bump: outer half of a boundary ball is completed as a hole', () => {
+  const f = synthFrame(480, 320);
+  // Felt covers x < 288; dark room x ≥ 288. Ball of r=12 centred ON the
+  // boundary: close fills the felt-side half (bite), the bump dilation must
+  // cover the outer half over the "rail".
+  f.rect(288, 0, 479, 319, DARK);
+  f.disc(288, 160, 12, WHITE);
+  const res = table.analyseData(f.data, 480, 320, THRESH);
+  const outer = 160 * 480 + 297;   // 9px past the boundary — outer half
+  assert.equal(res.felt[outer], 0, 'outer half is not cloth (never was)');
+  assert.equal(res.region[outer], 1, 'outer half joins the remap region');
+  assert.equal(res.maskU8[outer], 128, 'outer half encoded as hole');
+  assert.ok(res.bumps[outer], 'outer half marked as bump');
+  // Deep room stays out.
+  const deep = 160 * 480 + 400;
+  assert.equal(res.region[deep], 0, 'deep room stays outside the region');
+});
+
 test('border fill: elongated arm hanging from the border is NOT filled', () => {
   const f = synthFrame(480, 320);
   f.rect(100, 170, 149, 319, DARK);   // 50×150 arm, wider than 2·ballR

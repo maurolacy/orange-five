@@ -40,6 +40,7 @@ const PALETTE = {
   felt: [20, 102, 54],
   enclosed: [255, 212, 0],
   filled: [255, 140, 0],
+  bumps: [220, 0, 220],
   outside: [40, 40, 40],
 };
 
@@ -82,7 +83,8 @@ function run(file, opts) {
   for (let i = 0; i < n; i++) {
     const col = res.felt[i] ? PALETTE.felt
       : (res.filled[i] ? PALETTE.filled
-        : (!res.fromBorder[i] ? PALETTE.enclosed : PALETTE.outside));
+        : (res.bumps[i] ? PALETTE.bumps
+          : (!res.fromBorder[i] ? PALETTE.enclosed : PALETTE.outside)));
     const p = i * 4;
     mask.data[p] = col[0]; mask.data[p + 1] = col[1]; mask.data[p + 2] = col[2];
     mask.data[p + 3] = 255;
@@ -101,7 +103,8 @@ function run(file, opts) {
     for (let i = 0; i < n; i++) {
       const col = res.felt[i] ? PALETTE.felt
         : (res.filled[i] ? PALETTE.filled
-          : (!res.fromBorder[i] ? PALETTE.enclosed : PALETTE.outside));
+          : (res.bumps[i] ? PALETTE.bumps
+            : (!res.fromBorder[i] ? PALETTE.enclosed : PALETTE.outside)));
       const p = i * 4;
       for (let c = 0; c < 3; c++) {
         ov.data[p + c] = Math.round(col[c] * A + small.data[p + c] * (1 - A));
