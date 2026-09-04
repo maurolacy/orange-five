@@ -83,7 +83,8 @@ function asciiMask(res, cols = 60, rows = 24) {
       const x = Math.floor((rx + 0.5) * res.w / cols);
       const y = Math.floor((ry + 0.5) * res.h / rows);
       const i = y * res.w + x;
-      line += res.felt[i] ? '#' : (res.fromBorder[i] ? '.' : 'o');
+      line += res.felt[i] ? '#'
+        : (res.filled && res.filled[i] ? '+' : (res.fromBorder[i] ? '.' : 'o'));
     }
     lines.push(line);
   }

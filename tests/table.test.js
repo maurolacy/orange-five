@@ -70,6 +70,92 @@ for (const i of Object.keys(REF_EXPECT)) {
   });
 }
 
+// --- 4. Border-hole fill (TODO.md #1) ---------------------------------------
+
+const WHITE = [255, 255, 255];   // cue-ball: L=1.0 → never cloth
+const DARK = [30, 30, 30];       // arm/room: L=0.12 → never cloth
+
+/** Synthetic bright-felt frame with paint helpers (disc/rect clip to frame). */
+function synthFrame(w, h) {
+  const data = new Uint8ClampedArray(w * h * 4);
+  for (let i = 0; i < w * h; i++) {
+    data[i * 4] = 128; data[i * 4 + 1] = 138; data[i * 4 + 2] = 148;
+    data[i * 4 + 3] = 255;
+  }
+  const paint = (x, y, rgb) => {
+    const o = (y * w + x) * 4;
+    data[o] = rgb[0]; data[o + 1] = rgb[1]; data[o + 2] = rgb[2];
+  };
+  const disc = (cx, cy, rad, rgb) => {
+    for (let y = Math.max(0, cy - rad); y <= Math.min(h - 1, cy + rad); y++) {
+      for (let x = Math.max(0, cx - rad); x <= Math.min(w - 1, cx + rad); x++) {
+        const dx = x - cx, dy = y - cy;
+        if (dx * dx + dy * dy <= rad * rad) paint(x, y, rgb);
+      }
+    }
+  };
+  const rect = (x0, y0, x1, y1, rgb) => {
+    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) paint(x, y, rgb);
+  };
+  return { data, paint, disc, rect, w, h };
+}
+
+test('border fill: ball cut by the frame edge joins the region', () => {
+  const f = synthFrame(160, 120);
+  f.disc(152, 60, 14, WHITE);   // centre 7px from the right edge → reachable
+  f.disc(80, 40, 10, WHITE);    // mid-table → enclosed hole (old path)
+  const res = table.analyseData(f.data, 160, 120, THRESH);
+  const edge = 60 * 160 + 156;
+  assert.equal(res.filled[edge], 1, 'edge ball marked as filled');
+  assert.equal(res.region[edge], 1, 'edge ball in remap region');
+  assert.equal(res.maskU8[edge], 128, 'edge ball encoded as hole');
+  const mid = 40 * 160 + 80;
+  assert.equal(res.filled[mid], 0, 'enclosed ball is not "filled" (already enclosed)');
+  assert.equal(res.region[mid], 1, 'enclosed ball still in region');
+  assert.ok(res.filledCount >= 400, `edge ball area counted (got ${res.filledCount})`);
+});
+
+test('border fill: elongated arm hanging from the border is NOT filled', () => {
+  const f = synthFrame(160, 120);
+  f.rect(40, 80, 48, 119, DARK);   // 9×40, aspect 4.4, touches bottom border
+  const res = table.analyseData(f.data, 160, 120, THRESH);
+  const arm = 100 * 160 + 44;
+  assert.equal(res.filled[arm], 0, 'arm not filled');
+  assert.equal(res.region[arm], 0, 'arm stays outside the region');
+});
+
+test('border fill: flat round-ish blob (aspect 3) is NOT filled', () => {
+  const f = synthFrame(160, 120);
+  f.rect(60, 110, 89, 119, WHITE);  // 30×10 against the bottom border
+  const res = table.analyseData(f.data, 160, 120, THRESH);
+  assert.equal(res.filled[114 * 160 + 75], 0, 'aspect-3 blob rejected');
+  assert.equal(res.region[114 * 160 + 75], 0);
+});
+
+test('border fill: big room/surround region is NOT filled', () => {
+  const f = synthFrame(160, 120);
+  f.rect(0, 0, 159, 47, DARK);     // top 40% of the frame
+  const res = table.analyseData(f.data, 160, 120, THRESH);
+  const room = 20 * 160 + 80;
+  assert.equal(res.filled[room], 0, 'room not filled');
+  assert.equal(res.region[room], 0, 'room stays outside the region');
+  // …and the felt bed below is still found
+  assert.ok(res.feltFraction >= 0.4,
+    `bed felt ${(res.feltFraction * 100).toFixed(0)}% (want ≥40%)`);
+});
+
+test('border fill: stays conservative on the real refs (≤ 2% of frame)', { timeout: 60000 }, () => {
+  for (const name of ['ref1.png', 'ref2.png', 'ref3.png', 'ref4.png', 'ref5.png',
+    'ref6.png', 'ref7.png', 'ref8.png', 'ref9.png', 'ref10.png',
+    'table_fail1.png', 'table_fail2.png']) {
+    const small = loadWorking(name);
+    const res = table.analyseData(small.data, small.w, small.h, THRESH);
+    const frac = res.filledCount / (res.w * res.h);
+    assert.ok(frac <= 0.02,
+      `${name}: border fill covers ${(frac * 100).toFixed(1)}% of frame (> 2%)\n${asciiMask(res)}`);
+  }
+});
+
 // --- 3. Failure-frame regressions ------------------------------------------
 
 test('fail1 (dark arena + player): bed sliver found, player shirt excluded', { timeout: 30000 }, () => {

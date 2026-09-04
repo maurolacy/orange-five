@@ -6,6 +6,10 @@
  * the image border marks everything reachable from outside (rails, arms,
  * room). Felt + enclosed non-felt = "table region" — balls sit inside
  * enclosed pockets of non-felt, so the remap region is felt ∪ enclosed.
+ * Finally, round felt-adjacent pockets reachable from outside (balls cut by
+ * the frame edge, balls/pockets on the rails) are filled back in: small,
+ * roundish non-felt components next to the felt qualify; the room/rails fail
+ * the area cap and arms fail the roundness gate.
  *
  * Port of orange-five-detect/src/cloth.rs (seed, classify, close, largest
  * component, border flood). No circles, no ball logic yet — step 2
@@ -272,10 +276,93 @@
     return reached;
   }
 
+  // --- Border-hole fill (TODO.md #1) -----------------------------------------
+
+  // Pockets and balls sitting on the rails — or cut by the frame edge — are
+  // non-felt reachable from outside, so the border flood excludes them and
+  // their ball colours never remap. Fill the components that plausibly ARE
+  // balls/pockets: adjacent to felt, small vs the felt area, roundish bbox.
+  // The room/rails are far over the area cap; arms/hands are elongated. A
+  // circle cut by the frame edge keeps ≈0.79 bbox fill and ≤2.0 aspect, so
+  // edge-cut balls still pass. A closed fist on the bed can still pass —
+  // accepted trade-off (a brief skin paint beats missing rail balls).
+  const BORDER_FILL = {
+    minArea: 24,     // below this it's specks/noise — harmless but pointless
+    minAbs: 1500,    // absolute cap floor (small frames / small felt)
+    maxRel: 0.20,    // …and never above 20% of the felt area
+    minFill: 0.45,   // area / bbox area (full disk ≈0.79, half-disk ≈0.79)
+    maxAspect: 2.5,  // bbox elongation (half-disk is 2.0)
+  };
+
+  /**
+   * Label the border-reached non-felt components; fill the ball/pocket-shaped
+   * ones. Returns { filled: Uint8Array, filledCount }.
+   */
+  function fillBorderHoles(felt, fromBorder, w, h, feltCount) {
+    const n = w * h;
+    const filled = new Uint8Array(n);
+    const comp = new Int32Array(n);   // 0 = unvisited, else component id (1-based)
+    const queue = new Int32Array(n);
+    const ok = [];                    // per component id: passes the gates
+    let nextId = 1;
+    for (let start = 0; start < n; start++) {
+      if (felt[start] || !fromBorder[start] || comp[start]) continue;
+      let qh = 0, qt = 0;
+      comp[start] = nextId;
+      queue[qt++] = start;
+      let area = 0, minx = w, maxx = -1, miny = h, maxy = -1, touchesFelt = 0;
+      while (qh < qt) {
+        const i = queue[qh++];
+        area++;
+        const x = i % w, y = (i / w) | 0;
+        if (x < minx) minx = x;
+        if (x > maxx) maxx = x;
+        if (y < miny) miny = y;
+        if (y > maxy) maxy = y;
+        if (x > 0) {
+          const j = i - 1;
+          if (felt[j]) touchesFelt = 1;
+          else if (!comp[j]) { comp[j] = nextId; queue[qt++] = j; }
+        }
+        if (x < w - 1) {
+          const j = i + 1;
+          if (felt[j]) touchesFelt = 1;
+          else if (!comp[j]) { comp[j] = nextId; queue[qt++] = j; }
+        }
+        if (y > 0) {
+          const j = i - w;
+          if (felt[j]) touchesFelt = 1;
+          else if (!comp[j]) { comp[j] = nextId; queue[qt++] = j; }
+        }
+        if (y < h - 1) {
+          const j = i + w;
+          if (felt[j]) touchesFelt = 1;
+          else if (!comp[j]) { comp[j] = nextId; queue[qt++] = j; }
+        }
+      }
+      const bw = maxx - minx + 1, bh = maxy - miny + 1;
+      const hi = Math.max(bw, bh), lo = Math.min(bw, bh);
+      ok[nextId] = touchesFelt &&
+        area >= BORDER_FILL.minArea &&
+        area <= Math.max(BORDER_FILL.minAbs, BORDER_FILL.maxRel * feltCount) &&
+        area / (bw * bh) >= BORDER_FILL.minFill &&
+        hi / lo <= BORDER_FILL.maxAspect ? 1 : 0;
+      nextId++;
+    }
+    let filledCount = 0;
+    for (let i = 0; i < n; i++) {
+      if (comp[i] && ok[comp[i]]) { filled[i] = 1; filledCount++; }
+    }
+    return { filled, filledCount };
+  }
+
   /**
    * Full cloth analysis on an RGBA buffer.
-   * Returns { w, h, clothRgb, felt: Uint8Array, region: Uint8Array, feltFraction }
-   * region = felt ∪ enclosed non-felt (the remap gate), 1 byte per pixel.
+   * Returns { w, h, clothRgb, felt: Uint8Array, region: Uint8Array,
+   * filled: Uint8Array, feltFraction, filledCount }
+   * region = felt ∪ enclosed non-felt ∪ filled border holes (the remap gate),
+   * 1 byte per pixel. `filled` ⊆ fromBorder: border-touching pockets we
+   * promoted to holes.
    */
   function analyseData(data, w, h, thresh) {
     const n = w * h;
@@ -343,22 +430,32 @@
 
     // 4. Border flood: reachable-from-outside vs enclosed.
     const fromBorder = floodFromBorder(felt, w, h);
+    let feltCount = 0;
+    for (let i = 0; i < n; i++) feltCount += felt[i];
 
-    // 5. Remap region = felt OR enclosed non-felt.
-    // maskU8 is the texture encoding: felt=255, enclosed hole=128, outside=0.
-    // (LUMINANCE texture normalises byte/255; the shader gates on >=0.5 and
-    // the debug view splits at 0.66/0.33 — holes at 0.502 fall in "yellow".)
+    // 4.5 Border-hole fill (TODO.md #1): balls/pockets touching the frame
+    // border were flooded to "outside"; promote the round, felt-adjacent
+    // ones back into the region. They land in `filled` — NOT `felt` — so
+    // feltFraction and the debug felt view stay truthful about the cloth.
+    const { filled, filledCount } =
+      fillBorderHoles(felt, fromBorder, w, h, feltCount);
+
+    // 5. Remap region = felt OR enclosed non-felt OR filled border holes.
+    // maskU8 is the texture encoding: felt=255, enclosed/filled hole=128,
+    // outside=0. (LUMINANCE texture normalises byte/255; the shader gates on
+    // >=0.5 and the debug view splits at 0.66/0.33 — holes at 0.502 fall in
+    // "yellow".)
     const region = new Uint8Array(n);
     const maskU8 = new Uint8Array(n);
-    let feltCount = 0;
     for (let i = 0; i < n; i++) {
-      if (felt[i]) { region[i] = 1; maskU8[i] = 255; feltCount++; }
-      else if (!fromBorder[i]) { region[i] = 1; maskU8[i] = 128; }
+      if (felt[i]) { region[i] = 1; maskU8[i] = 255; }
+      else if (filled[i] || !fromBorder[i]) { region[i] = 1; maskU8[i] = 128; }
     }
     return {
       w, h, clothRgb,
-      felt, region, maskU8, fromBorder,
+      felt, region, maskU8, fromBorder, filled,
       feltFraction: feltCount / n,
+      filledCount,
     };
   }
 
@@ -395,12 +492,14 @@
     return res;
   }
 
-  /** Debug paint: felt green, enclosed yellow, outside grey. */
+  /** Debug paint: felt green, enclosed yellow, filled border holes orange,
+   * outside grey. */
   function debugImage(res) {
     const id = new ImageData(res.w, res.h);
     for (let i = 0; i < res.w * res.h; i++) {
       const p = i * 4;
       if (res.felt[i]) { id.data[p] = 20; id.data[p + 1] = 102; id.data[p + 2] = 54; }
+      else if (res.filled && res.filled[i]) { id.data[p] = 255; id.data[p + 1] = 140; id.data[p + 2] = 0; }
       else if (!res.fromBorder[i]) { id.data[p] = 255; id.data[p + 1] = 212; id.data[p + 2] = 0; }
       else { id.data[p] = 40; id.data[p + 1] = 40; id.data[p + 2] = 40; }
       id.data[p + 3] = 255;
@@ -414,6 +513,6 @@
 
   // Node test hook: exposes the pure pipeline for harness/ without a DOM.
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { analyseData, isFeltSeed, looksLikeCloth };
+    module.exports = { analyseData, isFeltSeed, looksLikeCloth, fillBorderHoles };
   }
 })();
