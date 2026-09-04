@@ -159,41 +159,61 @@
     return 0;
   }
 
-  /** Square-kernel dilate (radius r). */
+  /** Square-kernel dilate, separable (row pass + column pass — a square SE
+   * factors, so this is bit-identical to the naive 2-D scan but O(n·r)
+   * instead of O(n·r²); the ball-scale close below needs r ≈ 12-28. */
   function dilate(src, w, h, r) {
+    const tmp = new Uint8Array(src.length);
     const out = new Uint8Array(src.length);
     for (let y = 0; y < h; y++) {
-      const y0 = Math.max(0, y - r), y1 = Math.min(h - 1, y + r);
+      const row = y * w;
       for (let x = 0; x < w; x++) {
         const x0 = Math.max(0, x - r), x1 = Math.min(w - 1, x + r);
         let any = 0;
-        for (let yy = y0; yy <= y1 && !any; yy++) {
-          const row = yy * w;
-          for (let xx = x0; xx <= x1; xx++) {
-            if (src[row + xx]) { any = 1; break; }
-          }
+        for (let xx = x0; xx <= x1; xx++) {
+          if (src[row + xx]) { any = 1; break; }
         }
-        out[y * w + x] = any;
+        tmp[row + x] = any;
+      }
+    }
+    for (let y = 0; y < h; y++) {
+      const y0 = Math.max(0, y - r), y1 = Math.min(h - 1, y + r);
+      const row = y * w;
+      for (let x = 0; x < w; x++) {
+        let any = 0;
+        for (let yy = y0; yy <= y1; yy++) {
+          if (tmp[yy * w + x]) { any = 1; break; }
+        }
+        out[row + x] = any;
       }
     }
     return out;
   }
 
-  /** Square-kernel erode (radius r). */
+  /** Square-kernel erode, separable (see dilate). */
   function erode(src, w, h, r) {
+    const tmp = new Uint8Array(src.length);
     const out = new Uint8Array(src.length);
     for (let y = 0; y < h; y++) {
-      const y0 = Math.max(0, y - r), y1 = Math.min(h - 1, y + r);
+      const row = y * w;
       for (let x = 0; x < w; x++) {
         const x0 = Math.max(0, x - r), x1 = Math.min(w - 1, x + r);
         let all = 1;
-        for (let yy = y0; yy <= y1 && all; yy++) {
-          const row = yy * w;
-          for (let xx = x0; xx <= x1; xx++) {
-            if (!src[row + xx]) { all = 0; break; }
-          }
+        for (let xx = x0; xx <= x1; xx++) {
+          if (!src[row + xx]) { all = 0; break; }
         }
-        out[y * w + x] = all;
+        tmp[row + x] = all;
+      }
+    }
+    for (let y = 0; y < h; y++) {
+      const y0 = Math.max(0, y - r), y1 = Math.min(h - 1, y + r);
+      const row = y * w;
+      for (let x = 0; x < w; x++) {
+        let all = 1;
+        for (let yy = y0; yy <= y1; yy++) {
+          if (!tmp[yy * w + x]) { all = 0; break; }
+        }
+        out[row + x] = all;
       }
     }
     return out;
@@ -427,6 +447,23 @@
     // off, then we re-pick the largest so the bed is what survives.
     felt = morphOpen(felt, w, h, openR);
     keepLargestComponent(felt, w, h);
+
+    // 3b. Ball-scale close (TODO.md #1, round 2): in oblique/lateral views the
+    //     rail balls are round BITES out of the felt boundary, welded to the
+    //     giant room component — no hole-filling can rescue them (the audit:
+    //     fail2 has only two felt-adjacent border components, both ~50-90k
+    //     px). A closing with r slightly above the ball radius fills those
+    //     bites: a disc can't fit inside a bite narrower than 2r, so the bite
+    //     is absorbed; straight boundaries and the room (unbounded mouth) are
+    //     untouched, and closing is extensive so it cannot resurrect what the
+    //     open severed. Ball size from felt extent (perspective makes this a
+    //     lower bound in oblique views — hence the floor): a ball is ~2.25 in
+    //     vs a 9-ft table's 100 in ≈ 2.3% of table width; visible felt is
+    //     crop-dependent, so √felt only ever *under*-estimates → clamped.
+    let preCount = 0;
+    for (let i = 0; i < n; i++) preCount += felt[i];
+    const ballR = Math.min(28, Math.max(12, Math.round(0.05 * Math.sqrt(preCount))));
+    felt = morphClose(felt, w, h, ballR);
 
     // 4. Border flood: reachable-from-outside vs enclosed.
     const fromBorder = floodFromBorder(felt, w, h);

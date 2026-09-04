@@ -101,42 +101,52 @@ function synthFrame(w, h) {
 }
 
 test('border fill: ball cut by the frame edge joins the region', () => {
-  const f = synthFrame(160, 120);
-  f.disc(152, 60, 14, WHITE);   // centre 7px from the right edge → reachable
-  f.disc(80, 40, 10, WHITE);    // mid-table → enclosed hole (old path)
-  const res = table.analyseData(f.data, 160, 120, THRESH);
-  const edge = 60 * 160 + 156;
+  const f = synthFrame(480, 320);
+  f.disc(472, 160, 42, WHITE);   // big close-up ball cut by the right edge
+  f.disc(240, 80, 30, WHITE);    // mid-table → enclosed hole (old path; too
+                                 // wide for the ball close to absorb)
+  const res = table.analyseData(f.data, 480, 320, THRESH);
+  const edge = 160 * 480 + 470;
   assert.equal(res.filled[edge], 1, 'edge ball marked as filled');
   assert.equal(res.region[edge], 1, 'edge ball in remap region');
   assert.equal(res.maskU8[edge], 128, 'edge ball encoded as hole');
-  const mid = 40 * 160 + 80;
+  const mid = 80 * 480 + 240;
   assert.equal(res.filled[mid], 0, 'enclosed ball is not "filled" (already enclosed)');
   assert.equal(res.region[mid], 1, 'enclosed ball still in region');
-  assert.ok(res.filledCount >= 400, `edge ball area counted (got ${res.filledCount})`);
+  assert.ok(res.filledCount >= 2000, `edge ball area counted (got ${res.filledCount})`);
+});
+
+test('ball close: round bite from the border is absorbed into the felt', () => {
+  const f = synthFrame(480, 320);
+  f.disc(479, 160, 12, WHITE);   // ball (r=12 < ballR≈19) hugging the edge
+  const res = table.analyseData(f.data, 480, 320, THRESH);
+  const bite = 160 * 480 + 477;
+  assert.equal(res.felt[bite], 1, 'bite absorbed by ball-scale close');
+  assert.equal(res.region[bite], 1, 'bite is inside the remap region');
 });
 
 test('border fill: elongated arm hanging from the border is NOT filled', () => {
-  const f = synthFrame(160, 120);
-  f.rect(40, 80, 48, 119, DARK);   // 9×40, aspect 4.4, touches bottom border
-  const res = table.analyseData(f.data, 160, 120, THRESH);
-  const arm = 100 * 160 + 44;
+  const f = synthFrame(480, 320);
+  f.rect(100, 170, 149, 319, DARK);   // 50×150 arm, wider than 2·ballR
+  const res = table.analyseData(f.data, 480, 320, THRESH);
+  const arm = 250 * 480 + 125;
   assert.equal(res.filled[arm], 0, 'arm not filled');
   assert.equal(res.region[arm], 0, 'arm stays outside the region');
 });
 
 test('border fill: flat round-ish blob (aspect 3) is NOT filled', () => {
-  const f = synthFrame(160, 120);
-  f.rect(60, 110, 89, 119, WHITE);  // 30×10 against the bottom border
-  const res = table.analyseData(f.data, 160, 120, THRESH);
-  assert.equal(res.filled[114 * 160 + 75], 0, 'aspect-3 blob rejected');
-  assert.equal(res.region[114 * 160 + 75], 0);
+  const f = synthFrame(480, 320);
+  f.rect(120, 275, 254, 319, WHITE);  // 135×45 against the bottom border
+  const res = table.analyseData(f.data, 480, 320, THRESH);
+  assert.equal(res.filled[300 * 480 + 190], 0, 'aspect-3 blob rejected');
+  assert.equal(res.region[300 * 480 + 190], 0);
 });
 
 test('border fill: big room/surround region is NOT filled', () => {
-  const f = synthFrame(160, 120);
-  f.rect(0, 0, 159, 47, DARK);     // top 40% of the frame
-  const res = table.analyseData(f.data, 160, 120, THRESH);
-  const room = 20 * 160 + 80;
+  const f = synthFrame(480, 320);
+  f.rect(0, 0, 479, 127, DARK);     // top 40% of the frame
+  const res = table.analyseData(f.data, 480, 320, THRESH);
+  const room = 40 * 480 + 240;
   assert.equal(res.filled[room], 0, 'room not filled');
   assert.equal(res.region[room], 0, 'room stays outside the region');
   // …and the felt bed below is still found
