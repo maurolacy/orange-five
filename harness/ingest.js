@@ -26,13 +26,14 @@ const table = require('../table.js');
 const balls = require('../balls.js');
 
 function parseArgs(argv) {
-  const o = { start: 0, dur: 20, fps: 5, outdir: null, thresh: 32, blend: false, reuse: false, src: null };
+  const o = { start: 0, dur: 20, fps: 5, outdir: null, thresh: 32, blend: false, reuse: false, maxw: 0, src: null };
   for (let i = 0; i < argv.length; i++) {
     if (argv[i] === '--start') o.start = Number(argv[++i]);
     else if (argv[i] === '--dur') o.dur = Number(argv[++i]);
     else if (argv[i] === '--fps') o.fps = Number(argv[++i]);
     else if (argv[i] === '--outdir') o.outdir = argv[++i];
     else if (argv[i] === '--threshold') o.thresh = Number(argv[++i]);
+    else if (argv[i] === '--maxw') o.maxw = Number(argv[++i]);
     else if (argv[i] === '--blend') o.blend = true;
     else if (argv[i] === '--reuse') o.reuse = true;
     else o.src = argv[i];
@@ -44,9 +45,12 @@ function parseArgs(argv) {
 const UA = 'Mozilla/5.0';
 
 function extractFrames(src, o, dir) {
+  const vf = o.maxw > 0
+    ? `fps=${o.fps},scale='min(iw,${o.maxw})':-2`
+    : `fps=${o.fps}`; // native resolution (stage-2 colour scoring wants it)
   execFileSync('ffmpeg', ['-v', 'error', '-user_agent', UA,
     '-ss', String(o.start), '-i', src, '-t', String(o.dur),
-    '-vf', `fps=${o.fps},scale=480:-2`, '-q:v', 2,
+    '-vf', vf, '-q:v', 2,
     path.join(dir, 'f%05d.png')], { timeout: 300000, maxBuffer: 1e7 });
   return fs.readdirSync(dir).filter((f) => f.endsWith('.png')).sort();
 }
@@ -132,7 +136,7 @@ function runs(flags) {
 
 function main() {
   const o = parseArgs(process.argv.slice(2));
-  if (!o.src) { console.log('usage: node harness/ingest.js <url-or-file|@N> [--start S] [--dur S] [--fps N] [--outdir DIR] [--threshold 32] [--blend] [--reuse]'); process.exit(1); }
+  if (!o.src) { console.log('usage: node harness/ingest.js <url-or-file|@N> [--start S] [--dur S] [--fps N] [--outdir DIR] [--threshold 32] [--maxw N] [--blend] [--reuse]'); process.exit(1); }
   if (o.src.startsWith('@')) {
     const urls = fs.readFileSync(path.join(__dirname, 'urls.txt'), 'utf8')
       .split('\n').map((s) => s.trim()).filter(Boolean);
@@ -156,24 +160,22 @@ function main() {
   const overlays = {};
   frames.forEach((f, idx) => {
     const png = PNG.sync.read(fs.readFileSync(path.join(dir, f)));
-    const scale = Math.min(1, 480 / png.width);
-    let data = png.data, w = png.width, h = png.height;
-    if (scale < 1) {
-      const d = require('../tests/helpers').downscaleRgba(png.data, png.width, png.height, 480);
-      data = d.data; w = d.w; h = d.h;
-    }
-    const res = table.analyseData(data, w, h, o.thresh);
-    const found = balls.detectBalls(data, w, h, res.region);
+    // Stage 1 (mask) always at the working width; stage 2 colour scoring at
+    // the frame's own resolution when it is bigger than the mask.
+    const d = require('../tests/helpers').downscaleRgba(png.data, png.width, png.height, 480);
+    const res = table.analyseData(d.data, d.w, d.h, o.thresh);
+    const found = balls.detectBallsFull(d.data, res, png.data, png.width, png.height,
+      png.width / d.w, png.height / d.h);
     const t = +(o.start + idx / o.fps).toFixed(2);
     const rec = {
       t, felt: +(res.feltFraction * 100).toFixed(1),
-      five: found.five && { cx: +found.five.cx.toFixed(1), cy: +found.five.cy.toFixed(1), r: +found.five.r.toFixed(1), purity: +found.five.purity.toFixed(2), rgb: found.five.rgb },
-      four: found.four && { cx: +found.four.cx.toFixed(1), cy: +found.four.cy.toFixed(1), r: +found.four.r.toFixed(1), purity: +found.four.purity.toFixed(2), rgb: found.four.rgb },
-      two: found.two && { cx: +found.two.cx.toFixed(1), cy: +found.two.cy.toFixed(1), r: +found.two.r.toFixed(1), purity: +found.two.purity.toFixed(2), rgb: found.two.rgb },
+      five: found.five && { cx: +found.five.cx.toFixed(1), cy: +found.five.cy.toFixed(1), r: +found.five.r.toFixed(1), purity: +found.five.purity.toFixed(2), rgb: found.five.rgb, src: found.five.src },
+      four: found.four && { cx: +found.four.cx.toFixed(1), cy: +found.four.cy.toFixed(1), r: +found.four.r.toFixed(1), purity: +found.four.purity.toFixed(2), rgb: found.four.rgb, src: found.four.src },
+      two: found.two && { cx: +found.two.cx.toFixed(1), cy: +found.two.cy.toFixed(1), r: +found.two.r.toFixed(1), purity: +found.two.purity.toFixed(2), rgb: found.two.rgb, src: found.two.src },
     };
     jsonl.push(JSON.stringify(rec));
     if (idx % Math.max(1, Math.ceil(frames.length / 60)) === 0) {
-      const ov = overlay(res, found, data, o.blend);
+      const ov = overlay(res, found, d.data, o.blend);
       overlays[`overlay_${String(idx).padStart(4, '0')}_t${t.toFixed(1)}`] = ov;
       fs.writeFileSync(path.join(dir, `overlay_${String(idx).padStart(4, '0')}_t${t.toFixed(1)}.png`), PNG.sync.write(ov));
     }

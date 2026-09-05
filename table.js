@@ -715,6 +715,15 @@
 
   // --- Video plumbing -------------------------------------------------------
 
+  /** Scratch canvas for the stage-2 ball scoring crop (native resolution). */
+  let fullScratch = null, fctx = null;
+  function ensureFullScratch() {
+    if (!fullScratch) {
+      fullScratch = document.createElement('canvas');
+      fctx = fullScratch.getContext('2d', { willReadFrequently: true, alpha: false });
+    }
+  }
+
   /** Downsample the video into the scratch canvas, run analyseData.
    * Returns null if the video has no frame yet. */
   function analyse(video, thresh) {
@@ -732,12 +741,44 @@
     const res = analyseData(id.data, w, h, thresh ?? 32);
     // Accept/reject: a slate should occupy a plausible chunk of the frame.
     if (res.feltFraction < 0.04) return null;   // "nowhere"
-    // Bulk ball classification (TODO.md #4) on the same downscaled frame —
-    // reuses the region mask as seed; costs one O(n) classify pass + BFS on
-    // ball-sized components only.
+    // Bulk ball classification (TODO.md #4). Two stages: candidates from the
+    // 480-wide mask (coarse classify + close + labeling, cheap), then COLOUR
+    // scoring of each candidate's small disk at the video's ORIGINAL
+    // resolution — the mask is only 480 wide, balls r≈3–13 px there, too
+    // coarse for stable disk stats (the shadowed real 5 was r≈4).
     const Balls = (typeof window !== 'undefined' && window.__orangeFiveBalls) ||
       (typeof require === 'function' ? require('./balls.js') : null);
-    if (Balls) res.balls = Balls.detectBalls(id.data, w, h, res.region);
+    if (Balls) {
+      const t0 = performance.now();
+      if (typeof Balls.detectBallsFull === 'function' && video.videoWidth > w) {
+        const sx = video.videoWidth / w, sy = video.videoHeight / h;
+        // Crop the native-res frame around the region bbox (+pad ≥ largest
+        // candidate radius) — balls never sit outside the table region.
+        const PAD = 32;
+        const bb = Balls.regionBBox(res.region, w, h);
+        if (bb) {
+          const ox = Math.max(0, Math.floor((bb.x0 - PAD) * sx));
+          const oy = Math.max(0, Math.floor((bb.y0 - PAD) * sy));
+          const fw = Math.min(video.videoWidth - ox, Math.ceil((bb.x1 + PAD + 1) * sx) - ox);
+          const fh = Math.min(video.videoHeight - oy, Math.ceil((bb.y1 + PAD + 1) * sy) - oy);
+          ensureFullScratch();
+          if (fullScratch.width !== fw || fullScratch.height !== fh) {
+            fullScratch.width = fw;
+            fullScratch.height = fh;
+          }
+          fctx.drawImage(video, ox, oy, fw, fh, 0, 0, fw, fh);
+          const fid = fctx.getImageData(0, 0, fw, fh);
+          res.balls = Balls.detectBallsFull(id.data, res, fid.data, fw, fh, sx, sy, ox, oy);
+        } else {
+          res.balls = { five: null, four: null, two: null };
+        }
+      } else {
+        // video ≤ mask width, or the classifier has no stage 2: all-mask-res
+        // legacy path.
+        res.balls = Balls.detectBalls(id.data, w, h, res.region);
+      }
+      res.timings.balls = Math.round((performance.now() - t0) * 10) / 10;
+    }
     return res;
   }
 

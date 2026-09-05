@@ -104,6 +104,18 @@
                         // as the class, AND the disk mean must classify too
   };
 
+  // Stage-1 SEED gates (relaxed): the 480-wide pass only PROPOSES candidate
+  // locations; the full-res colour scoring (scoreFull) makes the precision
+  // decision. Relaxed so the shadowed real 5 (fragmented crescent, r≈4 mask
+  // px) still gets a native-resolution chance.
+  const SEED = {
+    minArea: 6,       // mask px — strict GATES.minArea is 12
+    minFill: 0.30,
+    maxAspect: 2.6,
+    maxPerClass: 4,   // candidates scored at full res, biggest first
+    bumpMinPix: 2,    // felt-detector bump disc needs ≥2 classified px
+  };
+
   /**
    * Biggest-wins per class. Only pixels inside `region` (table felt ∪
    * enclosed/filled/bumped non-felt) participate.
@@ -249,12 +261,17 @@
     return out;
   }
 
-  /** Biggest same-class component of a binary mask, with shape gates. */
-  function biggestBlob(m, data, w, h) {
+  /**
+   * Label every component of a binary mask; returns per-component blob stats,
+   * biggest area first (stable sort → deterministic). Shared by biggestBlob
+   * (strict gates) and candidates() (relaxed SEED gates).
+   */
+  function components(m, data, w, h) {
     const n = w * h;
     const comp = new Int32Array(n);
     const queue = new Int32Array(n);
-    let best = null, nextId = 1;
+    const out = [];
+    let nextId = 1;
     for (let start = 0; start < n; start++) {
       if (!m[start] || comp[start]) continue;
       let qh = 0, qt = 0;
@@ -278,32 +295,241 @@
       }
       const bw = maxx - minx + 1, bh = maxy - miny + 1;
       const hi = Math.max(bw, bh), lo = Math.min(bw, bh);
-      const fill = area / (bw * bh);
-      const ok = area >= GATES.minArea &&
-        area <= GATES.maxAreaFrac * n &&
-        fill >= GATES.minFill &&
-        hi / lo <= GATES.maxAspect;
-      if (ok && (!best || area > best.area)) {
-        best = {
-          cx: sx / area, cy: sy / area,
-          r: Math.min(GATES.maxR, Math.sqrt(area / Math.PI)),
-          area, fill, aspect: hi / lo,
-          rgb: [Math.round(sr / area), Math.round(sg / area), Math.round(sb / area)],
-        };
-      }
+      out.push({
+        cx: sx / area, cy: sy / area,
+        r: Math.min(GATES.maxR, Math.sqrt(area / Math.PI)),
+        area, fill: area / (bw * bh), aspect: hi / lo,
+        rgb: [Math.round(sr / area), Math.round(sg / area), Math.round(sb / area)],
+      });
       nextId++;
     }
-    return best;
+    return out.sort((a, b) => b.area - a.area);
+  }
+
+  /** Biggest same-class component of a binary mask, with shape gates. */
+  function biggestBlob(m, data, w, h) {
+    const n = w * h;
+    // components() is sorted by area desc → first gate-passing = biggest
+    // passing, exactly the old single-winner semantics.
+    for (const c of components(m, data, w, h)) {
+      if (c.area >= GATES.minArea &&
+          c.area <= GATES.maxAreaFrac * n &&
+          c.fill >= GATES.minFill &&
+          c.aspect <= GATES.maxAspect) return c;
+    }
+    return null;
+  }
+
+  // --- Two-stage resolution split --------------------------------------------
+  // Stage 1 (mask res, candidates()): colour classify → close(r=2) → label,
+  // relaxed SEED gates + the felt detector's ball-completion discs — proposes
+  // candidate locations. Stage 2 (scoreFull()): COLOUR-ONLY scoring of each
+  // candidate's small disk at native resolution (disk mean, purity, hot-pink
+  // fraction, classified-pixel count). Morphology and BFS never leave the
+  // mask resolution; full-res work is bounded by the candidate disks.
+
+  /** Pool for the native-res region buffer (up to ~8 MB at 1080p — do not
+   * allocate fresh every cycle). */
+  const pool = new Map();
+  function pooled(key, n) {
+    let b = pool.get(key);
+    if (!b || b.length !== n) { b = new Uint8Array(n); pool.set(key, b); }
+    return b;
+  }
+
+  /** Bounding box of all set pixels in a mask (mask coords), or null. */
+  function regionBBox(region, w, h) {
+    let x0 = w, y0 = h, x1 = -1, y1 = -1;
+    for (let y = 0; y < h; y++) {
+      const row = y * w;
+      for (let x = 0; x < w; x++) {
+        if (region[row + x]) {
+          if (x < x0) x0 = x;
+          if (x > x1) x1 = x;
+          if (y < y0) y0 = y;
+          if (y > y1) y1 = y;
+        }
+      }
+    }
+    return x1 < 0 ? null : { x0, y0, x1, y1 };
+  }
+
+  /**
+   * Stage 1 (mask space): coarse colour classify → close(r=2) → label.
+   * Collects up to SEED.maxPerClass components per class passing the relaxed
+   * SEED gates (biggest first), plus the felt detector's ball-completion
+   * discs (`bumps`, from table.js analyseData) that contain classified
+   * pixels — geometry-based seeds, colour-independent. All coords in MASK
+   * space; `src` marks the origin ('blob' | 'bump').
+   */
+  function candidates(data, w, h, region, bumps) {
+    const n = w * h;
+    if (!region) return { five: [], four: [], two: [] };
+    const masks = { five: new Uint8Array(n), four: new Uint8Array(n), two: new Uint8Array(n) };
+    for (let i = 0; i < n; i++) {
+      if (!region[i]) continue;
+      const p = i * 4;
+      const cls = classify(data[p], data[p + 1], data[p + 2]);
+      if (cls) masks[cls][i] = 1;
+    }
+    const out = { five: [], four: [], two: [] };
+    for (const cls of ['five', 'four', 'two']) {
+      const m = morphClose(masks[cls], w, h, 2);
+      const list = [];
+      for (const c of components(m, data, w, h)) {
+        if (c.area < SEED.minArea || c.fill < SEED.minFill ||
+            c.aspect > SEED.maxAspect || c.area > GATES.maxAreaFrac * n) continue;
+        c.src = 'blob';
+        list.push(c);
+        if (list.length >= SEED.maxPerClass) break;
+      }
+      out[cls] = list;
+    }
+    if (bumps) addBumpSeeds(out, masks, bumps, data, w, h);
+    return out;
+  }
+
+  /** Seed candidates from the felt detector's completed-ball discs: any bump
+   * disc holding ≥ SEED.bumpMinPix classified mask pixels of a class joins
+   * that class's candidate list (unless a blob candidate already covers it). */
+  function addBumpSeeds(out, masks, bumps, data, w, h) {
+    for (const b of components(bumps, data, w, h)) {
+      if (b.area < 4 || b.r > GATES.maxR) continue;
+      for (const cls of ['five', 'four', 'two']) {
+        if (out[cls].some((c) => Math.hypot(c.cx - b.cx, c.cy - b.cy) < Math.max(2, c.r))) continue;
+        let pix = 0;
+        const R2 = b.r * b.r;
+        for (let y = Math.max(0, Math.floor(b.cy - b.r)); y <= Math.min(h - 1, Math.ceil(b.cy + b.r)); y++) {
+          for (let x = Math.max(0, Math.floor(b.cx - b.r)); x <= Math.min(w - 1, Math.ceil(b.cx + b.r)); x++) {
+            const dx = x - b.cx, dy = y - b.cy;
+            if (dx * dx + dy * dy <= R2 && masks[cls][y * w + x]) pix++;
+          }
+          if (pix >= SEED.bumpMinPix) break;
+        }
+        if (pix >= SEED.bumpMinPix) {
+          out[cls].push({ cx: b.cx, cy: b.cy, r: b.r, area: b.area, fill: 0.79, aspect: 1, rgb: b.rgb, src: 'bump' });
+        }
+      }
+    }
+  }
+
+  /** Fraction of a disk's pixels that classify as saturated "hot pink" (the
+   * 4's lit side) — the phantom-5 discriminator, measured at native res. */
+  function hotFrac(data, region, w, h, cx, cy, r) {
+    let n = 0, hot = 0;
+    const R2 = r * r;
+    for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(h - 1, Math.ceil(cy + r)); y++) {
+      for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(w - 1, Math.ceil(cx + r)); x++) {
+        const dx = x - cx, dy = y - cy;
+        if (dx * dx + dy * dy > R2) continue;
+        const i = y * w + x;
+        if (!region[i]) continue;
+        n++;
+        const p = i * 4;
+        const { h: hh, s: ss, l: ll } = rgbToHsl(data[p], data[p + 1], data[p + 2]);
+        if (hh >= 0.80 && hh < 0.99 && ss >= 0.40 && ll > 0.15 && ll < 0.85) hot++;
+      }
+    }
+    return n ? hot / n : 0;
+  }
+
+  /**
+   * The mask region at native resolution. Only the neighborhood of the given
+   * mask-space rect is filled (full px (ox+x, oy+y) reads the mask at
+   * ((ox+x)/sx, (oy+y)/sy) — nearest-neighbour down-map); the rest stays 0,
+   * and diskStats only samples inside candidate disks anyway. POOLED buffer,
+   * valid until the next call.
+   */
+  function upscaleRegion(region, mw, mh, fw, fh, sx, sy, ox, oy, mx0, my0, mx1, my1) {
+    const reg = pooled('bReg', fw * fh);
+    reg.fill(0);
+    const lx0 = Math.max(0, Math.floor(mx0 * sx) - ox);
+    const ly0 = Math.max(0, Math.floor(my0 * sy) - oy);
+    const lx1 = Math.min(fw, Math.ceil((mx1 + 1) * sx) - ox);
+    const ly1 = Math.min(fh, Math.ceil((my1 + 1) * sy) - oy);
+    for (let y = ly0; y < ly1; y++) {
+      const my = Math.min(mh - 1, ((oy + y) / sy) | 0);
+      const mrow = my * mw;
+      const orow = y * fw;
+      for (let x = lx0; x < lx1; x++) {
+        reg[orow + x] = region[mrow + Math.min(mw - 1, ((ox + x) / sx) | 0)];
+      }
+    }
+    return reg;
+  }
+
+  /**
+   * Stage 2: score stage-1 candidates at NATIVE resolution — colour counting
+   * only (no morphology, no labeling). fullData is native-res RGBA; (ox, oy)
+   * is the crop origin in native px when the caller cropped around the table
+   * bbox; sx/sy the native-per-mask scale. Winners are returned in MASK
+   * space — the exact contract detectBalls has always had — so content.js
+   * and the shader need no changes. Biggest-area-first candidate that passes
+   * all full-res gates wins (same biggest-wins semantics as detectBalls).
+   */
+  function scoreFull(cands, res, fullData, fw, fh, sx, sy, ox = 0, oy = 0) {
+    const mw = res.w, mh = res.h, maskRegion = res.region;
+    const winners = { five: null, four: null, two: null };
+    if (!maskRegion || fw < 1 || fh < 1 || !(sx > 0) || !(sy > 0)) return winners;
+    // Union neighborhood of all candidate disks in mask coords.
+    let mx0 = mw, my0 = mh, mx1 = -1, my1 = -1;
+    for (const cls of ['five', 'four', 'two']) {
+      for (const c of cands[cls]) {
+        const pad = c.r + 2;
+        mx0 = Math.min(mx0, Math.max(0, Math.floor(c.cx - pad)));
+        my0 = Math.min(my0, Math.max(0, Math.floor(c.cy - pad)));
+        mx1 = Math.max(mx1, Math.min(mw - 1, Math.ceil(c.cx + pad)));
+        my1 = Math.max(my1, Math.min(mh - 1, Math.ceil(c.cy + pad)));
+      }
+    }
+    if (mx1 < 0) return winners;
+    const identity = sx === 1 && sy === 1 && ox === 0 && oy === 0 && fw === mw && fh === mh;
+    const reg = identity ? maskRegion
+      : upscaleRegion(maskRegion, mw, mh, fw, fh, sx, sy, ox, oy, mx0, my0, mx1, my1);
+    const minPix = GATES.minArea * sx * sy; // native-res speck guard
+    for (const cls of ['five', 'four', 'two']) {
+      for (const c of cands[cls]) {   // biggest-area first
+        // candidate mask pos → native ABSOLUTE px (mx·sx) → crop-local (− ox)
+        const fx = c.cx * sx - ox, fy = c.cy * sy - oy;
+        const fr = Math.max(2, c.r * sx);
+        const st = diskStats(cls, fullData, reg, fw, fh, fx, fy, fr);
+        if (st.mean !== cls || st.purity < GATES.minPurity) continue;
+        if (st.purity * st.n < minPix) continue;
+        if (cls === 'five' && st.n &&
+            hotFrac(fullData, reg, fw, fh, fx, fy, fr) > GATES.hotPinkFrac) continue;
+        winners[cls] = { ...c, purity: st.purity, rgb: st.rgb };
+        break;
+      }
+    }
+    // Phantom-5 guard #1 (mask space — same as detectBalls): the four's
+    // desaturated shadow side classifies mauve; a five whose centre falls
+    // inside the winning four is dropped.
+    if (winners.five && winners.four) {
+      const d = Math.hypot(winners.five.cx - winners.four.cx, winners.five.cy - winners.four.cy);
+      if (d < winners.four.r * GATES.phantomDist) winners.five = null;
+    }
+    return winners;
+  }
+
+  /**
+   * Full pipeline: stage-1 candidates on the mask-space frame (`res` from
+   * table.analyseData, maskData the 480-wide RGBA), then native-res colour
+   * scoring. When the "full" data IS the mask data (small video), everything
+   * runs in mask space directly.
+   */
+  function detectBallsFull(maskData, res, fullData, fw, fh, sx, sy, ox = 0, oy = 0) {
+    const cands = candidates(maskData, res.w, res.h, res.region, res.bumps);
+    return scoreFull(cands, res, fullData, fw, fh, sx, sy, ox, oy);
   }
 
   if (typeof window !== 'undefined') {
-    window.__orangeFiveBalls = { detectBalls, classify };
+    window.__orangeFiveBalls = { detectBalls, detectBallsFull, classify, candidates, regionBBox };
   }
   if (typeof module !== 'undefined' && module.exports) {
     module.exports = {
-      detectBalls, classify,
+      detectBalls, detectBallsFull, classify, candidates, scoreFull, regionBBox,
       // debug/probe access (harness/ballprobe.js) — not for production use
-      _internals: { morphClose, biggestBlob, diskStats, GATES, looksMauve, rgbToHsl, quickReject },
+      _internals: { morphClose, biggestBlob, components, diskStats, GATES, SEED, hotFrac, upscaleRegion, looksMauve, rgbToHsl, quickReject },
     };
   }
 })();
