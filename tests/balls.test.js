@@ -46,7 +46,8 @@ function synthFrame(w, h) {
 
 // Measured ball colours (Rust lab / broadcast samples).
 const MAUVE = [134, 92, 101];   // 5: desaturated rose #865c65
-const PINK = [214, 96, 142];    // 4: saturated rose, blue bias
+const PINK = [214, 96, 142];    // 4: saturated rose, blue bias (Rust-lab fixture)
+const SALMON = [222, 141, 128]; // 4: broadcast salmon/coral (US Open main camera)
 const CYAN = [88, 165, 174];    // 2: cyan (measured shaded ball; B ≈ G, both ≫ R)
 
 function run(f) {
@@ -68,6 +69,11 @@ test('classify: mauve vs pink vs cyan (order + saturation matter)', () => {
   assert.equal(balls.classify(88, 92, 100), null, 'grey shirt excluded');
   // The 4's desaturated shadow side reads mauve (phantom-5 source).
   assert.equal(balls.classify(120, 88, 96), 'five');
+  // Broadcast salmon 4: r ≫ b ≈ g, hue in the rose band — the old magenta
+  // gate missed it entirely. Brown 7 / lit red 3 must stay excluded.
+  assert.equal(balls.classify(...SALMON), 'four', 'salmon 4 detected');
+  assert.equal(balls.classify(138, 84, 49), null, 'brown 7 is not the 4');
+  assert.equal(balls.classify(200, 55, 75), null, 'lit red 3 is not the 4');
 });
 
 test('detects each ball class on the felt, at the right centre', () => {

@@ -250,10 +250,15 @@
 
       if (u_orangeEnabled > 0.5 && inFive && inViolet && s > 0.10 && hasPurpleRed) {
         outc = toOrange(s, l);
-      } else if (u_pinkEnabled > 0.5 && inFour && inPink && s >= max(u_pinkSatMin, 0.14)
-          && blueBias >= u_pinkBlueBias
-          && br >= u_pinkMinBlueRatio
-          && chroma > 0.12) {
+      } else if (u_pinkEnabled > 0.5 && inFour && s >= max(u_pinkSatMin, 0.14)
+          && chroma > 0.12
+          && ((inPink && blueBias >= u_pinkBlueBias && br >= u_pinkMinBlueRatio)
+            || (inRose && c.r > c.g + 0.18 && c.r > c.b + 0.18
+              && abs(c.b - c.g) <= 0.08 && l > 0.55))) {
+        // Two pink flavours, per balls.js classify: the magenta rose (blue
+        // bias, Rust-lab fixture) and the broadcast SALMON 4 [222,141,128]
+        // (r ≫ b ≈ g, hue in the rose band). Same separators as the
+        // classifier: red 3 / brown 7 are darker (l ≤ 0.5) or b ≪ g.
         outc = toPurple(s, l);
       } else if (u_orangeEnabled > 0.5 && inFive && inRose) {
         bool looksMauve = c.r > 0.10

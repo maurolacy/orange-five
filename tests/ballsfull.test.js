@@ -20,6 +20,7 @@ const { downscaleRgba } = require('./helpers');
 const THRESH = 32;
 const MAUVE = [134, 92, 101];
 const PINK = [214, 96, 142];
+const SALMON = [222, 141, 128]; // broadcast 4: bright coral, hue in the rose band
 const CYAN = [88, 165, 174];
 const GREEN6 = [106, 204, 177]; // the 6 under arena light — inside the cyan band
 const FELT = [128, 138, 148];
@@ -71,6 +72,19 @@ test('green 6 on the felt is never detected as the two (g−b gap guard)', () =>
   assert.equal(found.two, null, 'the 6 must not win the two class');
   assert.equal(found.five, null, 'and it is not the five either');
   assert.equal(found.four, null, 'nor the four');
+});
+
+test('salmon 4 detected through the two-stage pipeline', () => {
+  // The broadcast 4 ([222,141,128], h≈0.02) produced zero four-class pixels
+  // under the old magenta-only gate on testdata/main_balls.png.
+  const f = synthFrame(960, 540);
+  f.disc(600, 300, 12, SALMON); // mask (300,150)
+  const { found } = analyseFull(f);
+  assert.ok(found.four, 'salmon 4 wins the four slot');
+  assert.ok(Math.abs(found.four.cx - 300) <= 2 && Math.abs(found.four.cy - 150) <= 2,
+    `four at mask (300,150), got (${found.four.cx.toFixed(1)},${found.four.cy.toFixed(1)})`);
+  assert.equal(found.five, null, 'no phantom five from the 4');
+  assert.equal(found.two, null);
 });
 
 test('stage 2 finds balls scored at native res, coords back in mask space', () => {

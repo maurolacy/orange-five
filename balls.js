@@ -79,6 +79,15 @@
     if (h >= 0.83 && h < 0.97 && s >= 0.14) {
       if (b - g >= 5 && b / Math.max(r, 1) >= 0.55) return 'four';
     }
+    // Salmon four (measured [222,141,128] h≈0.02 s≈0.59 l≈0.69, US Open main
+    // camera): the broadcast 4 is a bright CORAL — r ≫ b ≈ g, hue in the rose
+    // band — not the magenta rose of the Rust-lab fixture above, which is why
+    // it produced zero four-class pixels (its shadow side even read "five").
+    // Separators, all measured on the same frame: brown 7 [138,84,49] is dark
+    // with b ≪ g (g/b ≈ 1.7); red 3 is dark (l ≤ ~0.5) with a blue lean
+    // (b−g ≥ +20); the 5's rose is desaturated (mauve caps s < 0.32).
+    if ((h >= 0.97 || h < 0.06) && s >= 0.40 && l >= 0.60 &&
+        r > g + 50 && r > b + 50 && Math.abs(b - g) <= 18) return 'four';
     if (h >= 0.45 && h < 0.58 && s >= 0.32) {
       // s ≥ 0.32: the cyan 2 is vivid (s≈0.5+); rail grey-blue [163,180,191]
       // sits at s≈0.2 in the same hue band and must not leak in.
