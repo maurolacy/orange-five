@@ -47,7 +47,7 @@ function synthFrame(w, h) {
 // Measured ball colours (Rust lab / broadcast samples).
 const MAUVE = [134, 92, 101];   // 5: desaturated rose #865c65
 const PINK = [214, 96, 142];    // 4: saturated rose, blue bias
-const CYAN = [80, 205, 185];    // 2: cyan
+const CYAN = [88, 165, 174];    // 2: cyan (measured shaded ball; B ≈ G, both ≫ R)
 
 function run(f) {
   const res = table.analyseData(f.data, f.w, f.h, THRESH);
@@ -58,6 +58,11 @@ test('classify: mauve vs pink vs cyan (order + saturation matter)', () => {
   assert.equal(balls.classify(...MAUVE), 'five');
   assert.equal(balls.classify(...PINK), 'four');
   assert.equal(balls.classify(...CYAN), 'two');
+  assert.equal(balls.classify(152, 214, 216), 'two', 'glare-washed real 2');
+  // The green 6 reads [106,204,177] under arena light — inside the cyan hue
+  // band (h≈0.47, s≈0.49) but greener than any real 2 (g−b ≈ 27; the 2 keeps
+  // g−b ≤ 0 shaded or washed). Must not classify as the 2.
+  assert.equal(balls.classify(106, 204, 177), null, 'green 6 is not the cyan 2');
   assert.equal(balls.classify(128, 138, 148), null, 'felt is not a ball');
   assert.equal(balls.classify(240, 240, 240), null, 'white cue excluded');
   assert.equal(balls.classify(88, 92, 100), null, 'grey shirt excluded');

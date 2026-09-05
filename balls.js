@@ -82,7 +82,13 @@
     if (h >= 0.45 && h < 0.58 && s >= 0.32) {
       // s ≥ 0.32: the cyan 2 is vivid (s≈0.5+); rail grey-blue [163,180,191]
       // sits at s≈0.2 in the same hue band and must not leak in.
-      if (g > r + 10 && b > r + 10 && b > g * 0.75 && g > b * 0.55) return 'two';
+      // b >= g − 12: the green 6 reads [106,204,177] (g−b ≈ 27) under arena
+      // light — inside this hue band and previously admitted by a mere
+      // b > 0.75·g. The real 2 keeps B ≈ G or above (measured g−b = −9…−2,
+      // both shaded and glare-washed), so gate on the ABSOLUTE g−b gap:
+      // white glare adds ~equally to G and B, keeping the gap wash-invariant
+      // (a ratio drifts toward 1 as the ball washes out).
+      if (g > r + 10 && b > r + 10 && b >= g - 12 && g > b * 0.55) return 'two';
     }
     return null;
   }
@@ -495,6 +501,11 @@
         const st = diskStats(cls, fullData, reg, fw, fh, fx, fy, fr);
         if (st.mean !== cls || st.purity < GATES.minPurity) continue;
         if (st.purity * st.n < minPix) continue;
+        // Green-6 guard: the 6's arena-light green [106,204,177] classifies
+        // cyan at mask res (g−b ≈ 27); the real 2 keeps g−b ≤ 0 (shaded or
+        // glare-washed). Same absolute-gap gate as classify() — see there
+        // for why the gap beats a B/G ratio.
+        if (cls === 'two' && st.rgb && st.rgb[2] < st.rgb[1] - 12) continue;
         if (cls === 'five' && st.n &&
             hotFrac(fullData, reg, fw, fh, fx, fy, fr) > GATES.hotPinkFrac) continue;
         winners[cls] = { ...c, purity: st.purity, rgb: st.rgb };

@@ -243,9 +243,10 @@
       float blueBias = c.b - c.g;
       float br = c.b / max(c.r, 0.001);
       bool hasPurpleRed = c.r > 0.10 && c.r > c.b * 0.22;
-      // Cyan: G and B both beat R; not a pure green 6-ball (B too low)
+      // Cyan: G and B both beat R; the green 6 (g−b ≈ 27/255) is excluded by
+      // the same absolute-gap rule as the classifier (b >= g − 12).
       bool looksCyan = c.g > c.r + 0.04 && c.b > c.r + 0.04
-        && c.b > c.g * 0.75 && c.g > c.b * 0.55;
+        && c.b > c.g - 0.05 && c.g > c.b * 0.55;
 
       if (u_orangeEnabled > 0.5 && inFive && inViolet && s > 0.10 && hasPurpleRed) {
         outc = toOrange(s, l);

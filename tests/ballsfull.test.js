@@ -20,7 +20,8 @@ const { downscaleRgba } = require('./helpers');
 const THRESH = 32;
 const MAUVE = [134, 92, 101];
 const PINK = [214, 96, 142];
-const CYAN = [80, 205, 185];
+const CYAN = [88, 165, 174];
+const GREEN6 = [106, 204, 177]; // the 6 under arena light — inside the cyan band
 const FELT = [128, 138, 148];
 
 function synthFrame(w, h) {
@@ -60,6 +61,17 @@ function analyseFull(f) {
   const found = balls.detectBallsFull(d.data, res, f.data, f.w, f.h, f.w / d.w, f.h / d.h);
   return { res, found, d };
 }
+
+test('green 6 on the felt is never detected as the two (g−b gap guard)', () => {
+  // The 6's arena-light green [106,204,177] used to pass the cyan gates
+  // (b > 0.75·g) — the "6 detected as the 2 after the 2 is potted" bug.
+  const f = synthFrame(960, 540);
+  f.disc(600, 300, 12, GREEN6); // mask (300,150)
+  const { found } = analyseFull(f);
+  assert.equal(found.two, null, 'the 6 must not win the two class');
+  assert.equal(found.five, null, 'and it is not the five either');
+  assert.equal(found.four, null, 'nor the four');
+});
 
 test('stage 2 finds balls scored at native res, coords back in mask space', () => {
   const f = fullFrame();
