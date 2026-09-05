@@ -16,6 +16,7 @@ extension's debug view or check the ASCII masks the tests print on failure.
 | `ref1.png` … `ref10.png` | ~1–5M each | Reference frames from WNT broadcast (bright studio). Copied from the `orange-five-detect` repo. refs 1–3: overhead/high angle, table fills frame; refs 4–7, 9, 10: higher/lateral; ref8: distant, table is a small top-band wedge. |
 | `table_fail1.png` | 6.1M | **Failure frame 1**: dark arena. Bed felt at L≈0.12, spotlight gradient, player's grey shirt near the slate. Originally: player welded to the table mask. Known-limited: detector catches only a bed sliver (~5%). |
 | `table_fail3.png` | — | **Failure frame 3**: US Open 9-ball broadcast, dark blue-lit arena. Bed lit only at the left sliver (~3.2%); rest in deep shadow ([16,22,29], L≈0.09). Needs the shadow-extension pass (table.js 3c) to cross the 4% gate. |
+| `table_fail4.png` | — | **Failure frame 4**: extreme lateral / player-focused view. Mask covers ~80% of the visible table (fails at the acute corners) but felt is ~2% of frame → under the 4% gate → NOWHERE. Known-limited by design; fix would be scale-aware acceptance, not a lower floor. |
 | `table_fail2.png` | 7.2M | **Failure frame 2**: bright spotlit bed (L≈0.75–0.82) with darker rails (L≈0.55). Originally: only the rails detected ("staircase" wedges). Fixed by raising bright-mode lightness caps; anchor must land on the lit bed. |
 | `rust-baseline.txt` | 10K | Rust reference output (orange-five-detect, `--method cloth`, defaults) used by `tests/detector.test.js`. |
 

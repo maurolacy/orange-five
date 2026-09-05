@@ -85,6 +85,21 @@ test('fail3 (US Open dark arena): lit sliver + shadow bed found', { timeout: 300
   assert.ok(b - r >= 12 && b >= g, `fail3 anchor [${res.clothRgb}] keeps blue lean`);
 });
 
+test('fail4 (distant table): sliver found but below the acceptance gate', { timeout: 30000 }, () => {
+  const small = loadWorking('table_fail4.png');
+  const res = table.analyseData(small.data, small.w, small.h, THRESH);
+  // Extreme distant view: the mask covers ~80% of the visible table (fails
+  // only at the acute corners), but the table is so small in frame that felt
+  // sits at ~2% — under the 4% acceptance gate → NOWHERE. Known-limited BY
+  // DESIGN: lowering the gate would admit shirt-sized grey-blue blobs. If
+  // distant tables ever matter, the fix is scale-aware acceptance, not a
+  // lower floor.
+  assert.ok(res.feltFraction >= 0.012 && res.feltFraction < 0.04,
+    `fail4: felt ${(res.feltFraction * 100).toFixed(1)}% (expected 1.2–4%, the NOWHERE band)`);
+  assert.ok(res.clothRgb[2] - res.clothRgb[0] >= 12,
+    `fail4 anchor [${res.clothRgb}] keeps blue lean`);
+});
+
 // --- 4. Border-hole fill (TODO.md #1) ---------------------------------------
 
 const WHITE = [255, 255, 255];   // cue-ball: L=1.0 → never cloth

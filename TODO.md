@@ -1,0 +1,15 @@
+# TODO / Issues
+
+## Felt / Table detector
+
+- ~~Round holes on the border (pockets, balls on the rails) must be filled in.~~ **Done, three mechanisms** (see `harness/holeaudit.js` for the reasoning): (a) `fillBorderHoles` — border-reached, felt-adjacent, roundish components ≤ max(1500 px, 20% of felt) → region holes; (b) ball-scale `morphClose` (radius ≈ clamp(0.05·√felt, 12, 28)) after the open — fills round *bites* out of the felt boundary (rail balls welded to the room component); (c) ball *completion* — the ball-like blobs among the close-added pixels (compact, ball-scaled area, bbox aspect ≤ 2.6 — excludes boundary-smoothing strips, the live "over-extends horizontally" bug) are stamped as Euclidean discs of radius ballR into `bumps` (holes, mask 128, magenta in debug): the outer half of a rail ball over the rail now remaps too. **Known limit**: balls on the *unlit* bed (fail2 top-left) have no detected felt to bite into — needs either a shadow-felt extension pass or TODO #4's ball blobs (colour classification works from a few seed pixels per ball, which we have). Knobs: `BORDER_FILL`, `ballR` in `table.js`; eyeball with `npm run table -- <img> --overlay`.
+- Add a color picker / probe for capturing / tuning in the felt colors?
+- **Perf**: analyse() ≈ 38 ms at 480-wide (ballclose 12 + morph 8 + classify/seed 9 + rest ~9). Done: scratch-buffer pooling (outputs stay fresh), keepLargestComponent single-pass rewrite, per-step timings in `res.timings`. content.js already self-throttles (≥100 ms + 3× cost backoff) — speed gains buy mask freshness, not less CPU. Big levers if needed: (a) working width 480→320 (~2.2×, needs w-scaling of the absolute-pixel gates), (b) TABLE_MIN_PERIOD_MS 100→150-200. Note: `table_fail4.png` is in testdata but not yet handled (2.0% → NOWHERE).
+- **Table detection edge cases**: `table_fail3.png` (US Open dark arena) needs the shadow-extension pass (3c) — implemented. `table_fail4.png` (distant table): mask ~80% correct but under the 4% acceptance gate → NOWHERE; accepted by design (a lower gate would admit shirt-sized blobs; the real fix is scale-aware acceptance). Remaining known limit: the darkest bed region under/behind a player is still excluded; corner pockets unfilled (center pockets are); watch live for false-positive shadow annexation of dark blue-grey clothing near the slate — knobs are `sFloor`/`sCeil`/sat/chroma in step 3c of `table.js`.
+
+## Balls colour remapper
+
+- Now that the felt is limiting remapping, we can be more aggressive with the colour remappings. Make sure dark areas / shadows on the 5 are properly remapped to   (a properly adjusted) orange tonality.
+- Extend the colour remapper to the 4 and 2. Again, being more aggressive / open with the range of colours to remap.
+- Ball colour spilling: This is a big one. Since some colours are close (dark pink on the 4 looks like orange on the 5, the red looks like pink, etc.), they end up being improperly remapped.
+  The only way I see around this is ball identification. Instead of blindly remapping the colors inside the detected area, indentify the balls and remap each one   with its proper color
