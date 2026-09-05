@@ -9,6 +9,8 @@ video.
 
 ## [Unreleased]
 
+## [2.4.1] — 2026-09-05
+
 ### Added
 
 - **Video-ingest harness** (`harness/ingest.js`): runs the full production
@@ -26,10 +28,38 @@ video.
   a phantom-5 guard discards a "five" whose centre falls inside the winning
   "four" (the 4's desaturated shadow side classifies as mauve).
 - **Per-ball remap gating** (shader): the 5→orange, 4→purple and 2→blue
-  remaps now apply only inside their ball's disk (1.35× margin) when that
-  ball is found; classes without a detected ball degrade to the previous
-  colour-only remap. This is the fix for colour spilling (dark pink on the 4
-  reading as orange on the 5).
+  remaps now apply only inside their ball's verified disk when that ball is
+  found; classes without a detected ball are never remapped. This is the fix
+  for colour spilling (dark pink on the 4 reading as orange on the 5).
+- **#5 — Whole-ball tone remap** (shader + `balls.js`): inside a verified
+  ball disk, EVERY pixel that isn't specular glare, the white number print /
+  near-neutral grey, or blue-grey felt is remapped to the target hue — all
+  tones and hues (highlight, body, shadow side) — while preserving each
+  pixel's exact lightness, so the ball reads as a real ball of the
+  target colour under the same lighting. Replaces the per-pixel hue-gated
+  remaps (their un-bounded hue ranges were what #4's disk gating contained).
+  Supporting pieces:
+  - **Tight ball radius `br`** (stage 2): the mask-res blob can undershoot
+    the visible ball by 2× (close fragments, washed edges), so `ballExtent`
+    scans a wider native-res window and takes, per angular octant, the
+    90th-percentile distance of the class's LOOSE-family pixels (`looseMatch`
+    — like `classify` but admits shaded/washed ball tones; still never
+    matches felt by channel ordering, near-neutrals, or the green 6). The
+    disk radius is the max over octants + 2 px — it always covers the ball,
+    even with a lit-side-biased centre. The shader receives `br/videoHeight`
+    (px/h) as `u_five/u_four/u_two.z`; the debug rings hug the ball.
+  - **In-disk felt exclusion by channel ordering**: this arena's washed felt
+    (e.g. [164,179,191]) has the SAME chroma/saturation as the balls, so the
+    old grey guards cannot separate them; felt is blue-grey (`G` and `B`
+    both beat `R`) while the mauve/salmon balls keep `R ≥ G` — the ordering
+    separates them. The turquoise 2 shares the ordering, so felt there must
+    additionally be low-chroma/low-B−G. Outside all disks the strict generic
+    guards still hold.
+
+## [2.4.0] — 2026-09-05
+
+### Added
+
 - **#4 — Two-stage ball classifier** (`balls.js`): stage 1 proposes
   candidates on the 480-wide mask (classify → close r=2 → relaxed seed gates,
   top-4 per class + felt-detector bump-disc seeds); stage 2 scores each
