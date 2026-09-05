@@ -732,6 +732,12 @@
     const res = analyseData(id.data, w, h, thresh ?? 32);
     // Accept/reject: a slate should occupy a plausible chunk of the frame.
     if (res.feltFraction < 0.04) return null;   // "nowhere"
+    // Bulk ball classification (TODO.md #4) on the same downscaled frame —
+    // reuses the region mask as seed; costs one O(n) classify pass + BFS on
+    // ball-sized components only.
+    const Balls = (typeof window !== 'undefined' && window.__orangeFiveBalls) ||
+      (typeof require === 'function' ? require('./balls.js') : null);
+    if (Balls) res.balls = Balls.detectBalls(id.data, w, h, res.region);
     return res;
   }
 

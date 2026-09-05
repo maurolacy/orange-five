@@ -22,6 +22,7 @@
     cyanEnabled: false, // optional: TV cyan 2-ball → blue
     tableEnabled: true, // gate remaps to the detected table region
     tableDebug: false,  // visualize the table mask instead of the video
+    ballsEnabled: true, // per-ball colour gating (TODO #4)
     orangeHue: 32 / 360,
     orangeSat: 0.60,
     orangeSatBoost: 1.7,
@@ -99,6 +100,13 @@
     uniform float u_cyanSat;
     uniform float u_cyanSatBoost;
     uniform float u_cyanSatMin;
+    uniform float u_aspect;        // videoWidth / videoHeight
+    // Per-ball gating (balls.js classifier). xyz = centre (height-normalised)
+    // + radius; r <= 0 → class not found → colour-only remap (fallback).
+    uniform vec3 u_five;
+    uniform vec3 u_four;
+    uniform vec3 u_two;
+    uniform float u_maskH;         // mask height in px (for px-sized overlays)
 
     vec3 rgb2hsl(vec3 c) {
       float maxc = max(max(c.r, c.g), c.b);
@@ -158,6 +166,9 @@
     void main() {
       vec4 tex = texture2D(u_tex, v_uv);
       vec3 c = tex.rgb;
+      // Aspect-corrected mask-space position (px/h) — shared by the per-ball
+      // gating and the debug rings below.
+      vec2 bp = vec2(v_uv.x * u_aspect, v_uv.y);
 
       // Table gate: outside the region, either passthrough or debug paint.
       // u_maskOk = 0 (no table found) → no remap anywhere; in debug view,
@@ -174,12 +185,22 @@
           // Mask debug view (independent of m's exact value):
           //   m >= 0.66 → felt (green) · 0.33–0.66 → enclosed hole (yellow)
           //   m < 0.33 → outside the table (dark grey, clearly visible)
+          // Ball-classifier disks are drawn as rings on top:
+          //   orange = five · purple = four · blue = two
           if (m >= 0.66) {
             gl_FragColor = vec4(0.08, 0.40, 0.21, 1.0);
           } else if (m >= 0.33) {
             gl_FragColor = vec4(1.0, 0.83, 0.0, 1.0);
           } else {
             gl_FragColor = vec4(0.16, 0.16, 0.16, 1.0);
+          }
+          float ringW = 1.5 / u_maskH; // 1.5 mask px, in px/h units
+          if (u_five.z > 0.0 && abs(distance(bp, u_five.xy) - u_five.z) < ringW) {
+            gl_FragColor = vec4(1.0, 0.55, 0.0, 1.0);
+          } else if (u_four.z > 0.0 && abs(distance(bp, u_four.xy) - u_four.z) < ringW) {
+            gl_FragColor = vec4(0.75, 0.0, 0.95, 1.0);
+          } else if (u_two.z > 0.0 && abs(distance(bp, u_two.xy) - u_two.z) < ringW) {
+            gl_FragColor = vec4(0.0, 0.45, 1.0, 1.0);
           }
           return;
         }
@@ -210,6 +231,14 @@
       // Cyan / turquoise (TV 2-ball) — between green and blue
       bool inCyan = h >= 0.45 && h < 0.58;
 
+      // Per-ball gating (strict): each colour remap applies ONLY inside its
+      // ball's disk (1.35× margin for detection/upsample slop). A class with
+      // no detected ball is NOT remapped at all — at most one ball of each
+      // colour exists, so colour-only remapping of un-found ranges is what
+      // causes spill (dark pink on the 4 reading as orange on the 5).
+      bool inFive = u_five.z > 0.0 && distance(bp, u_five.xy) <= u_five.z * 1.35;
+      bool inFour = u_four.z > 0.0 && distance(bp, u_four.xy) <= u_four.z * 1.35;
+      bool inTwo = u_two.z > 0.0 && distance(bp, u_two.xy) <= u_two.z * 1.35;
       vec3 outc = c;
       float blueBias = c.b - c.g;
       float br = c.b / max(c.r, 0.001);
@@ -218,14 +247,14 @@
       bool looksCyan = c.g > c.r + 0.04 && c.b > c.r + 0.04
         && c.b > c.g * 0.75 && c.g > c.b * 0.55;
 
-      if (u_orangeEnabled > 0.5 && inViolet && s > 0.10 && hasPurpleRed) {
+      if (u_orangeEnabled > 0.5 && inFive && inViolet && s > 0.10 && hasPurpleRed) {
         outc = toOrange(s, l);
-      } else if (u_pinkEnabled > 0.5 && inPink && s >= max(u_pinkSatMin, 0.14)
+      } else if (u_pinkEnabled > 0.5 && inFour && inPink && s >= max(u_pinkSatMin, 0.14)
           && blueBias >= u_pinkBlueBias
           && br >= u_pinkMinBlueRatio
           && chroma > 0.12) {
         outc = toPurple(s, l);
-      } else if (u_orangeEnabled > 0.5 && inRose) {
+      } else if (u_orangeEnabled > 0.5 && inFive && inRose) {
         bool looksMauve = c.r > 0.10
           && c.g / c.r >= u_mauveRatio * 0.85
           && br >= u_mauveRatio * 0.85
@@ -237,7 +266,7 @@
         if (looksMauve && s >= u_mauveSatMin) {
           outc = toOrange(s, l);
         }
-      } else if (u_cyanEnabled > 0.5 && inCyan && looksCyan
+      } else if (u_cyanEnabled > 0.5 && inTwo && inCyan && looksCyan
           && s >= u_cyanSatMin && chroma > 0.12) {
         outc = toBlue(s, l);
       }
@@ -410,6 +439,11 @@
       maskOk: gl.getUniformLocation(prog, 'u_maskOk'),
       debugMask: gl.getUniformLocation(prog, 'u_debugMask'),
       uMask: gl.getUniformLocation(prog, 'u_mask'),
+      aspect: gl.getUniformLocation(prog, 'u_aspect'),
+      five: gl.getUniformLocation(prog, 'u_five'),
+      four: gl.getUniformLocation(prog, 'u_four'),
+      two: gl.getUniformLocation(prog, 'u_two'),
+      maskH: gl.getUniformLocation(prog, 'u_maskH'),
     };
 
     const tex = gl.createTexture();
@@ -496,6 +530,10 @@
           gl.uniform1f(locs.cyanSatBoost, config.cyanSatBoost);
           gl.uniform1f(locs.cyanSatMin, cyanSatMin());
           gl.uniform1f(locs.debugMask, config.tableDebug ? 1.0 : 0.0);
+          gl.uniform1f(locs.aspect,
+            (video.videoWidth / Math.max(1, video.videoHeight)) || 1.0);
+          gl.uniform1f(locs.maskH, tableState.maskH || 312);
+          setBallUniforms(gl, locs);
           gl.drawArrays(gl.TRIANGLES, 0, 6);
         } catch (e) {
           console.error('Orange Five: draw error.', e.message);
@@ -528,6 +566,7 @@
   const tableState = {
     frame: 0, available: null, busy: false, gl: null, maskTex: null,
     lastRun: 0, lastCostMs: 0, lastUpload: null, // lastUpload: last maskU8 ref
+    balls: null, // last ball-classifier result (height-normalised disks)
   };
 
   function setMaskTarget(gl, maskTex) {
@@ -565,6 +604,38 @@
     }
     if (res) {
       tableState.available = true;
+      const now = performance.now();
+      // Throttled diagnostics: classifier output every ~2.5 s, for DevTools.
+      if (res.balls && now - (tableState.lastLog || 0) > 2500) {
+        tableState.lastLog = now;
+        const f = (x) => x ? `${x.cls || ''}(${x.cx.toFixed(0)},${x.cy.toFixed(0)}) r${x.r.toFixed(1)} rgb[${x.rgb}]` : 'none';
+        console.debug(`Orange Five balls [cycle ${tableState.frame}]: five=${f(res.balls.five)} four=${f(res.balls.four)} two=${f(res.balls.two)}`);
+      }
+      // Per-ball classification result → height-normalised disks for the
+      // shader (p-space is (u·aspect, v) = (px/h, py/h)). Temporal hold: a
+      // class that goes missing is kept for ~700 ms before being dropped —
+      // the classifier flickers on shadowed/moving balls, and blinking disks
+      // would blink the remaps themselves.
+      const k = 1 / res.h;
+      const disk = (b) => b ? [b.cx * k, b.cy * k, b.r * k] : null;
+      const fresh = res.balls ? {
+        five: disk(res.balls.five),
+        four: disk(res.balls.four),
+        two: disk(res.balls.two),
+      } : null;
+      const merged = { five: null, four: null, two: null };
+      const prev = tableState.balls || {};
+      for (const cls of ['five', 'four', 'two']) {
+        if (fresh && fresh[cls]) {
+          merged[cls] = fresh[cls];
+          tableState.ballsSeenAt = tableState.ballsSeenAt || {};
+          tableState.ballsSeenAt[cls] = now;
+        } else if (prev[cls] && now - (tableState.ballsSeenAt?.[cls] || 0) < 700) {
+          merged[cls] = prev[cls]; // hold
+        }
+      }
+      tableState.balls = merged;
+      tableState.ballsAt = now;
       // Upload only if the mask actually changed (compare against the buffer
       // we uploaded last time — ~150 KB memcmp is far cheaper than a texture
       // upload every cycle). res.maskU8 is a fresh buffer per analyse() call.
@@ -582,10 +653,12 @@
         // (m >= 0.5) and the debug view's splits (0.66/0.33) both read this.
         gl.texImage2D(gl.TEXTURE_2D, 0, gl.LUMINANCE, res.w, res.h, 0,
           gl.LUMINANCE, gl.UNSIGNED_BYTE, res.maskU8);
+        tableState.maskH = res.h;
         gl.activeTexture(gl.TEXTURE0); // restore for the next video upload
       }
     } else {
       tableState.available = false; // "nowhere" — no remap + black debug until next cycle
+      tableState.balls = null;
     }
   }
 
@@ -597,6 +670,20 @@
       if (a[i] !== b[i]) return false;
     }
     return true;
+  }
+
+  /**
+   * Per-ball uniforms from the last classifier cycle (tableState.balls holds
+   * height-normalised [cx, cy, r] per class, or null when not found /
+   * disabled). r ≤ 0 in the shader means "class not found" → colour-only
+   * remap fallback for that class.
+   */
+  function setBallUniforms(gl, locs) {
+    const b = (config.tableEnabled && config.ballsEnabled) ? tableState.balls : null;
+    const zero = [0, 0, 0];
+    gl.uniform3fv(locs.five, (b && b.five) || zero);
+    gl.uniform3fv(locs.four, (b && b.four) || zero);
+    gl.uniform3fv(locs.two, (b && b.two) || zero);
   }
 
   function apply() {
