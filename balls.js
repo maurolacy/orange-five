@@ -300,6 +300,10 @@
     window.__orangeFiveBalls = { detectBalls, classify };
   }
   if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { detectBalls, classify };
+    module.exports = {
+      detectBalls, classify,
+      // debug/probe access (harness/ballprobe.js) — not for production use
+      _internals: { morphClose, biggestBlob, diskStats, GATES, looksMauve, rgbToHsl, quickReject },
+    };
   }
 })();
