@@ -9,7 +9,14 @@
 
 ## Balls colour remapper
 
-- Now that the felt is limiting remapping, we can be more aggressive with the colour remappings. Make sure dark areas / shadows on the 5 are properly remapped to   (a properly adjusted) orange tonality.
-- Extend the colour remapper to the 4 and 2. Again, being more aggressive / open with the range of colours to remap.
-- Ball colour spilling: This is a big one. Since some colours are close (dark pink on the 4 looks like orange on the 5, the red looks like pink, etc.), they end up being improperly remapped.
-  The only way I see around this is ball identification. Instead of blindly remapping the colors inside the detected area, indentify the balls and remap each one   with its proper color
+- ~~Ball colour spilling → ball identification~~ **#4 DONE (v2, two-stage)**: stage 1 proposes candidates on the 480-wide mask (classify → close → relaxed gates); stage 2 scores each candidate's disk on the NATIVE-res frame (`detectBallsFull`, crop around the region bbox) — native purity 0.74–0.91 vs 0.56–0.72 at mask res fixed the real orange-5 recall gap on WNT footage (five now 100 % on its segments). Shader remaps gated to each ball's disk; classes without a ball are NOT remapped (no colour-only fallback). **6-as-2 fixed**: the 6's arena green [106,204,177] passed the cyan band; all three layers now require `b ≥ g − 12` (absolute g−b gap, wash-invariant) — see CHANGELOG. Watch live: phantom four on pink set dressing when felt % collapses (<10 % → consider suppressing ball remaps); temporal smoothing beyond the 700 ms disk hold if flicker shows.
+
+## Video ingest harness (real-footage debugging)
+
+- **`harness/ingest.js`** — samples any video file or signed HLS rendition URL through the FULL production pipeline and emits contact sheets (blended mask+photo), per-frame `frames.jsonl` (t, felt%, per-class cx/cy/r/purity/rgb) and a found/missing timeline. Usage: `node harness/ingest.js @N --start SS --dur S --fps 5 --blend [--reuse] [--outdir DIR]` (`@N` = line N of `harness/urls.txt`; `--reuse` re-analyses already-extracted frames; signed URLs expire — re-grab from DevTools→Network). First run (2026-09-04) on the US Open Sánchez Ruiz–Capito DVR (1080p rendition, ref match starts ≈ 1:38:50 = 5930 s):
+  - `two` detections were **correct** on both cameras (real cyan 2, r≈3–4, purity 0.79–0.97).
+  - **Phantom five reproduced on real footage**: the purple 4's mauve shadow side wins the five slot (rgb [115,108,135], purity 0.56–0.72) while the pink 3 wins "four" 15 px away — too far for the 1.3×r phantom guard (it only fires when the four is ON the same ball). Guard #2 (hot-pink ≥ 0.4) also missed: a shadow-only disk has < 40 % saturated pixels.
+  - **Real orange 5 recall gap in main-camera shots**: ball ≈ 4 px at 480-wide, loses biggest-wins to the phantom and/or fails purity. Confirms the planned 960-wide classification trial.
+  - **Set-dressing false four during close-ups**: when felt% collapses (2–6 %), the region swallows the pink US Open hoarding → "four" purity 0.80 on graphics. Mitigation candidate: suppress ball remapping when felt% < ~10 (camera off table).
+- `harness/ballprobe.js <dir> <frame>` — prints EVERY per-class component with blob gates + disk mean/purity and the official winner: the "why" behind any single frame.
+- `harness/crop.js <frame.png> <zoom> <radius> <out.png> <cx> <cy> ...` — zoomed side-by-side crops of raw frames (verify what's actually at a candidate position).

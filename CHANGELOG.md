@@ -9,17 +9,75 @@ video.
 
 ## [Unreleased]
 
-Planned (see `TODO.md`):
+### Added
 
-- **#4 — Bulk ball classifier**: identify balls on the detected table by colour
-  (connected components in hue ranges; biggest component wins each ball's slot),
-  so each ball is remapped with its own target colour instead of global hue
-  rules. This is the path to fixing colour spilling (dark pink on the 4 reading
-  as orange on the 5) and to extending remapping to the 2 and the 4 with wider
-  ranges.
+- **Video-ingest harness** (`harness/ingest.js`): runs the full production
+  pipeline (table mask + ball classifier) over a local clip or signed HLS
+  rendition URL at a chosen fps/start, writing contact sheets (mask blended
+  over the photo, classifier rings), per-frame `frames.jsonl` and a
+  found/missing timeline per class. `harness/ballprobe.js` dumps every
+  per-class candidate with blob gates + disk purity for single-frame forensics.
+- **#4 — Bulk ball classifier** (`balls.js`): identifies balls on the detected
+  table by colour (per-class connected components over the table region;
+  biggest component wins each class slot). Classes: mauve 5 (desaturated rose,
+  `B ≥ G` so the maroon 7 cannot leak), pink 4 (saturated rose, blue bias),
+  cyan 2 (vivid — rail grey-blue rejected by a saturation floor). A small
+  morphological close bridges the highlight/shadow fragments of one ball, and
+  a phantom-5 guard discards a "five" whose centre falls inside the winning
+  "four" (the 4's desaturated shadow side classifies as mauve).
+- **Per-ball remap gating** (shader): the 5→orange, 4→purple and 2→blue
+  remaps now apply only inside their ball's disk (1.35× margin) when that
+  ball is found; classes without a detected ball degrade to the previous
+  colour-only remap. This is the fix for colour spilling (dark pink on the 4
+  reading as orange on the 5).
+- **#4 — Two-stage ball classifier** (`balls.js`): stage 1 proposes
+  candidates on the 480-wide mask (classify → close r=2 → relaxed seed gates,
+  top-4 per class + felt-detector bump-disc seeds); stage 2 scores each
+  candidate's colour on the NATIVE-resolution frame (disk stats, purity,
+  hot-pink fraction, speck guard `minArea·s²`, phantom-5 distance guard) via
+  a padded crop of the table's bbox (`detectBallsFull`, wired into
+  `table.js analyse()` with a legacy fallback). Fixes the real-footage
+  orange-5 recall failure: 480-res purity 0.56–0.72 vs native 0.74–0.91;
+  the previously missed real 5 now reads 100 % coverage on its segments
+  (`node harness/ingest.js @3 --start 5956 …`). Results stay in mask space,
+  so `content.js` and the shader are unchanged apart from the gates below.
+- **Green-6 guard**: the 6 reads [106,204,177] under arena light — inside
+  the cyan hue band and previously admitted by `b > 0.75·g`, so after the
+  real 2 was potted the 6 could win the "two" slot (the "6 detected as the
+  2" bug). The cyan gate now requires `b ≥ g − 12` in `balls.js classify`,
+  as a native-disk mean check in `scoreFull`, and as `c.b > c.g − 0.05` in
+  the shader's `looksCyan`: the absolute g−b gap survives white glare (it
+  adds equally to G and B) where a B/G ratio drifts toward 1. Measured
+  separation: real 2 g−b = −9…−2 (shaded/washed), 6 at g−b ≈ 27.
+- Validated against the Rust-lab baseline: the five is detected on refs 1–4
+  within 0–11 px of the known positions (480-wide mask space).
+- New test suites `tests/balls.test.js` (classification order, biggest-wins,
+  region gating, oversized-blob rejection, phantom-5 guard, ref2 real-frame
+  position) and `tests/ballsfull.test.js` (mask-space coords, candidate
+  traceability, speck rejection, crop-offset equivalence, legacy agreement,
+  green-6 rejection).
+
+### Fixed
+
+- **6 detected as the 2 after the 2 is potted** (US Open DVR t≈1:40:32):
+  stage-1 cyan gates admitted the green 6's colour; the g−b gap guard above
+  rejects it in all three layers (classify, native disk scoring, shader).
+  Verified on real footage: `two` tracks the real 2 until the pot and stays
+  null afterwards, while the pre-pot tracking and the 5956 s five segment
+  are unchanged.
+
+### Performance
+
+- Ball classifier adds ~14–18 ms per cycle (on the same downscaled frame as
+  the mask; felt exits classification before any HSL math).
+
+Planned next (see `TODO.md`):
+
 - Table detection leftovers (accepted known limits): corner pockets unfilled,
   darkest bed under/behind players excluded, distant tables rejected by the 4%
   acceptance gate (fix would be scale-aware acceptance, not a lower floor).
+- Temporal smoothing for ball disks (hold last disk across cycles; the mask
+  already behaves this way via upload-skip).
 
 ## [2.3.3] — 2026-09-05
 
