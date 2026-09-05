@@ -448,6 +448,84 @@
     felt = morphOpen(felt, w, h, openR);
     keepLargestComponent(felt, w, h);
 
+    // 3c. Shadow extension (bright mode only): broadcast arenas light a
+    //     sliver of the bed (fail3: 3.2%) and leave the rest in deep shadow —
+    //     far below the bright lightness band, so classification stops at the
+    //     lit edge and the 4%-acceptance gate reads "nowhere". Dim mode can't
+    //     help: it only fires when NO bright seed exists. So admit darker
+    //     pixels that keep the cloth's ORDERING invariants — blue lean
+    //     (b−r ≥ 12, B ≥ G), modest sat — with a deep lightness window and a
+    //     LOOSE chroma bound (normalised chroma drifts as light falls; the
+    //     ordering does not). Only components adjacent to the felt are kept:
+    //     the shadow bed continues from the lit sliver; saturated blue floor
+    //     / crowd (sat > 0.32) and the neutral dark shirt (b < r) must not be
+    //     annexed. Ceiling aL−0.30 also fences the playerweld shirt (L 0.37
+    //     vs ceiling 0.24 at the synthetic's anchor).
+    if (!dim) {
+      const rf = clothRgb[0] / 255, gf = clothRgb[1] / 255, bf = clothRgb[2] / 255;
+      const aL = (Math.max(rf, gf, bf) + Math.min(rf, gf, bf)) / 2;
+      const sFloor = 0.06, sCeil = aL - 0.30;
+      if (sCeil > sFloor) {
+        const shadow = new Uint8Array(n);
+        let shadowCount = 0;
+        for (let i = 0, p = 0; i < n; i++, p += 4) {
+          if (felt[i]) continue;
+          const r0 = data[p], g0 = data[p + 1], b0 = data[p + 2];
+          if (b0 - r0 < 12 || b0 < g0) continue;
+          rgbToHsl(r0, g0, b0, HSL);
+          if (HSL[1] > 0.32 || HSL[2] < sFloor || HSL[2] > sCeil) continue;
+          if (chromaDist(r0, g0, b0, clothRgb) > 0.12) continue;
+          shadow[i] = 1;
+          shadowCount++;
+        }
+        if (shadowCount > 0) {
+          // Keep shadow components that touch the felt (4-adjacent).
+          const comp = new Int32Array(n);
+          const queue = new Int32Array(n);
+          const compOk = [];
+          let nextId = 1;
+          for (let start = 0; start < n; start++) {
+            if (!shadow[start] || comp[start]) continue;
+            let qh = 0, qt = 0;
+            comp[start] = nextId;
+            queue[qt++] = start;
+            let touches = 0;
+            while (qh < qt) {
+              const i = queue[qh++];
+              const x = i % w, y = (i / w) | 0;
+              if (x > 0) {
+                const j = i - 1;
+                if (felt[j]) touches = 1;
+                else if (shadow[j] && !comp[j]) { comp[j] = nextId; queue[qt++] = j; }
+              }
+              if (x < w - 1) {
+                const j = i + 1;
+                if (felt[j]) touches = 1;
+                else if (shadow[j] && !comp[j]) { comp[j] = nextId; queue[qt++] = j; }
+              }
+              if (y > 0) {
+                const j = i - w;
+                if (felt[j]) touches = 1;
+                else if (shadow[j] && !comp[j]) { comp[j] = nextId; queue[qt++] = j; }
+              }
+              if (y < h - 1) {
+                const j = i + w;
+                if (felt[j]) touches = 1;
+                else if (shadow[j] && !comp[j]) { comp[j] = nextId; queue[qt++] = j; }
+              }
+            }
+            compOk[nextId] = touches ? 1 : 0;
+            nextId++;
+          }
+          let grew = 0;
+          for (let i = 0; i < n; i++) {
+            if (shadow[i] && compOk[comp[i]]) { felt[i] = 1; grew++; }
+          }
+          if (grew > 0) keepLargestComponent(felt, w, h);
+        }
+      }
+    }
+
     // 3b. Ball-scale close (TODO.md #1, round 2): in oblique/lateral views the
     //     rail balls are round BITES out of the felt boundary, welded to the
     //     giant room component — no hole-filling can rescue them (the audit:

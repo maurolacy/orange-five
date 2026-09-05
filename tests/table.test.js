@@ -70,6 +70,21 @@ for (const i of Object.keys(REF_EXPECT)) {
   });
 }
 
+test('fail3 (US Open dark arena): lit sliver + shadow bed found', { timeout: 30000 }, () => {
+  const small = loadWorking('table_fail3.png');
+  const res = table.analyseData(small.data, small.w, small.h, THRESH);
+  // The lit bed sliver alone is ~3.2% (below the 4% acceptance gate); the
+  // shadow extension (3c) must annex the adjacent shaded bed to cross it.
+  assert.ok(res.feltFraction >= 0.04,
+    `fail3: felt ${(res.feltFraction * 100).toFixed(1)}% (want ≥4% incl. shadow bed)\n${asciiMask(res)}`);
+  // Anchor stays on the BRIGHT sliver (L≈0.76) — the shadow pass must not
+  // drag the anchor into the dark.
+  const [r, g, b] = res.clothRgb;
+  const l = ((Math.max(r, g, b) + Math.min(r, g, b)) / 2) / 255;
+  assert.ok(l >= 0.65, `fail3 anchor [${res.clothRgb}] should stay on lit felt (L≥0.70), got L=${l.toFixed(2)}`);
+  assert.ok(b - r >= 12 && b >= g, `fail3 anchor [${res.clothRgb}] keeps blue lean`);
+});
+
 // --- 4. Border-hole fill (TODO.md #1) ---------------------------------------
 
 const WHITE = [255, 255, 255];   // cue-ball: L=1.0 → never cloth
