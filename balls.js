@@ -225,6 +225,68 @@
     return { n, purity: n ? match / n : 0, rgb, mean: n ? classify(rgb[0], rgb[1], rgb[2]) : null };
   }
 
+  /** Loose per-family ball test for the extent scan only (never used for
+   * detection): catches shaded/washed ball tones the strict classifier
+   * drops, while never matching blue-grey felt, near-neutrals, glare or
+   * near-black, and (for the 2) never the green 6 (G way ahead of B). */
+  function looseMatch(cls, R, G, B) {
+    const mx = Math.max(R, G, B), mn = Math.min(R, G, B);
+    // Very permissive floors: deep ball-shadow tones must still match (the
+    // disk should reach the ball's darkest edge). Felt cannot match anyway
+    // — it fails the ordering test per family below.
+    if (mx - mn < 12 || mx > 250 || mx < 30) return false;
+    if (cls === 'five') {
+      // Mauve: lit tones have red over green; the darkest bottom shades go
+      // blue-dominant with G ≈ R (G−R ≤ 4 — lit felt sits at G−R ≥ 6 even
+      // in shadow), so admit those too.
+      return R > G || (B >= G && G - R <= 4);
+    }
+    if (cls === 'four') {
+      const felt = G > R + 3 && B > R; // blue-grey felt at any lightness
+      return !felt && R > G + 8 && R > B + 8; // salmon/rose
+    }
+    // two: turquoise; the felt clause's chroma/B−G caps also keep the ball
+    // itself (B−G ≈ 15 but chroma ≈ 64) and the green 6 (B far below G)
+    // from being treated as felt.
+    const felt2 = G > R + 3 && B > R && B - G < 25 && mx - mn < 45;
+    return !felt2 && G > R + 20 && B >= G - 12;
+  }
+
+  /** Ball extent (native px): per angular octant, the 90th-percentile
+   * distance of this class's LOOSE-family pixels from the centre; the disk
+   * radius is the max over octants, so the remap disk always covers the
+   * whole ball even when the centre is biased toward the lit side or the
+   * shadow side is sparsely matched. Scanned in a wider window (1.6× the
+   * candidate radius): the mask-res blob — and therefore the candidate
+   * disk — undershoots the visible ball. Felt/neutral never match loose,
+   * so the extent grows to the true ball edge and no further. */
+  function ballExtent(cls, data, region, w, h, cx, cy, fr) {
+    // The candidate fr (mask blob) can undershoot the ball by 2× — the
+    // window must scale past it: at least 40 px native, up to 2.4×fr, 64 cap.
+    const R = Math.min(Math.max(Math.round(fr * 2.4), 40), 64);
+    const R2 = R * R;
+    const oct = [[], [], [], [], [], [], [], []];
+    for (let y = Math.max(0, Math.floor(cy - R)); y <= Math.min(h - 1, Math.ceil(cy + R)); y++) {
+      for (let x = Math.max(0, Math.floor(cx - R)); x <= Math.min(w - 1, Math.ceil(cx + R)); x++) {
+        const dx = x - cx, dy = y - cy;
+        if (dx * dx + dy * dy > R2) continue;
+        const i = y * w + x;
+        if (!region[i]) continue;
+        const p = i * 4;
+        if (!looseMatch(cls, data[p], data[p + 1], data[p + 2])) continue;
+        const k = Math.min(7, Math.max(0, ((Math.atan2(dy, dx) + Math.PI) / (Math.PI / 4)) | 0));
+        oct[k].push(Math.sqrt(dx * dx + dy * dy));
+      }
+    }
+    let ext = 0;
+    for (const arr of oct) {
+      if (!arr.length) continue;
+      arr.sort((a, b) => a - b);
+      ext = Math.max(ext, arr[Math.min(arr.length - 1, (arr.length * 0.9) | 0)]);
+    }
+    return ext;
+  }
+
   /** Separable square close (r small — ball fragments, not felt bites):
    * dilate then erode, each as row+column passes. */
   function morphClose(src, w, h, r) {
@@ -517,7 +579,13 @@
         if (cls === 'two' && st.rgb && st.rgb[2] < st.rgb[1] - 12) continue;
         if (cls === 'five' && st.n &&
             hotFrac(fullData, reg, fw, fh, fx, fy, fr) > GATES.hotPinkFrac) continue;
-        winners[cls] = { ...c, purity: st.purity, rgb: st.rgb };
+        // Tight ball radius for the shader's whole-ball remap (native px):
+        // 95th-percentile extent of the ball's own classified pixels in a
+        // wider scan (see ballExtent), floored at 0.6·fr so a fragmented
+        // crescent still covers the ball body.
+        const tight = ballExtent(cls, fullData, reg, fw, fh, fx, fy, fr);
+        const br = Math.max(tight + 2, fr * 0.6);
+        winners[cls] = { ...c, purity: st.purity, rgb: st.rgb, br };
         break;
       }
     }

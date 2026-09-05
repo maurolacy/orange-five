@@ -57,7 +57,7 @@ function extractFrames(src, o, dir) {
 
 // Debug palette + rings, mirroring the shader's debug view.
 // With --blend the mask is mixed over the photo so the scene stays visible.
-function overlay(res, found, base, blend) {
+function overlay(res, found, base, blend, sx) {
   const { w, h } = res;
   const png = new PNG({ width: w, height: h });
   for (let i = 0; i < w * h; i++) {
@@ -78,7 +78,7 @@ function overlay(res, found, base, blend) {
   }
   const ring = (b, rgb) => {
     if (!b) return;
-    const R = Math.round(b.r), R2 = (R + 1) * (R + 1);
+    const R = Math.round(b.br ? b.br / (sx || 1) : b.r), R2 = (R + 1) * (R + 1);
     for (let y = Math.max(0, (b.cy - R - 1) | 0); y <= Math.min(h - 1, (b.cy + R + 1) | 0); y++) {
       for (let x = Math.max(0, (b.cx - R - 1) | 0); x <= Math.min(w - 1, (b.cx + R + 1) | 0); x++) {
         const dx = x - b.cx, dy = y - b.cy, d2 = dx * dx + dy * dy;
@@ -169,13 +169,13 @@ function main() {
     const t = +(o.start + idx / o.fps).toFixed(2);
     const rec = {
       t, felt: +(res.feltFraction * 100).toFixed(1),
-      five: found.five && { cx: +found.five.cx.toFixed(1), cy: +found.five.cy.toFixed(1), r: +found.five.r.toFixed(1), purity: +found.five.purity.toFixed(2), rgb: found.five.rgb, src: found.five.src },
-      four: found.four && { cx: +found.four.cx.toFixed(1), cy: +found.four.cy.toFixed(1), r: +found.four.r.toFixed(1), purity: +found.four.purity.toFixed(2), rgb: found.four.rgb, src: found.four.src },
-      two: found.two && { cx: +found.two.cx.toFixed(1), cy: +found.two.cy.toFixed(1), r: +found.two.r.toFixed(1), purity: +found.two.purity.toFixed(2), rgb: found.two.rgb, src: found.two.src },
+      five: found.five && { cx: +found.five.cx.toFixed(1), cy: +found.five.cy.toFixed(1), r: +found.five.r.toFixed(1), br: found.five.br && +found.five.br.toFixed(1), purity: +found.five.purity.toFixed(2), rgb: found.five.rgb, src: found.five.src },
+      four: found.four && { cx: +found.four.cx.toFixed(1), cy: +found.four.cy.toFixed(1), r: +found.four.r.toFixed(1), br: found.four.br && +found.four.br.toFixed(1), purity: +found.four.purity.toFixed(2), rgb: found.four.rgb, src: found.four.src },
+      two: found.two && { cx: +found.two.cx.toFixed(1), cy: +found.two.cy.toFixed(1), r: +found.two.r.toFixed(1), br: found.two.br && +found.two.br.toFixed(1), purity: +found.two.purity.toFixed(2), rgb: found.two.rgb, src: found.two.src },
     };
     jsonl.push(JSON.stringify(rec));
     if (idx % Math.max(1, Math.ceil(frames.length / 60)) === 0) {
-      const ov = overlay(res, found, d.data, o.blend);
+      const ov = overlay(res, found, d.data, o.blend, png.width / d.w);
       overlays[`overlay_${String(idx).padStart(4, '0')}_t${t.toFixed(1)}`] = ov;
       fs.writeFileSync(path.join(dir, `overlay_${String(idx).padStart(4, '0')}_t${t.toFixed(1)}.png`), PNG.sync.write(ov));
     }

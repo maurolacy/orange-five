@@ -139,28 +139,28 @@
       return vec3(hue2rgb(p, q, h + 1.0/3.0), hue2rgb(p, q, h), hue2rgb(p, q, h - 1.0/3.0));
     }
 
+    // Whole-ball remap targets: preserve the pixel's EXACT lightness (l) —
+    // highlights stay near-white, shadows stay dark, so the ball reads as a
+    // real ball of the target colour under the same lighting. Only
+    // saturation is modulated (less in deep shadow so the dark side doesn't
+    // go neon). u_orangeLift stays in config/uniforms for compatibility but
+    // the whole-ball remap deliberately ignores it (exact lightness).
     vec3 toOrange(float s, float l) {
-      float sat = min(1.0, max(s * u_orangeSatBoost, u_orangeSat));
       float shadow = smoothstep(0.03, 0.45, l);
-      sat *= mix(0.22, 1.0, shadow);
-      float lite = clamp(l + u_orangeLift + (1.0 - shadow) * 0.10, 0.0, 1.0);
-      return hsl2rgb(vec3(u_orangeHue, sat, lite));
+      float sat = min(1.0, max(s * u_orangeSatBoost, u_orangeSat)) * mix(0.22, 1.0, shadow);
+      return hsl2rgb(vec3(u_orangeHue, sat, l));
     }
 
     vec3 toPurple(float s, float l) {
-      float sat = min(0.82, max(s * u_pinkSatBoost, u_pinkSat));
       float shadow = smoothstep(0.03, 0.40, l);
-      sat *= mix(0.35, 1.0, shadow);
-      float lite = clamp(l * 0.96 + (1.0 - shadow) * 0.04, 0.0, 1.0);
-      return hsl2rgb(vec3(u_purpleHue, sat, lite));
+      float sat = min(0.82, max(s * u_pinkSatBoost, u_pinkSat)) * mix(0.35, 1.0, shadow);
+      return hsl2rgb(vec3(u_purpleHue, sat, l));
     }
 
     vec3 toBlue(float s, float l) {
-      float sat = min(0.85, max(s * u_cyanSatBoost, u_cyanSat));
       float shadow = smoothstep(0.03, 0.40, l);
-      sat *= mix(0.30, 1.0, shadow);
-      float lite = clamp(l * 0.98 + (1.0 - shadow) * 0.04, 0.0, 1.0);
-      return hsl2rgb(vec3(u_blueHue, sat, lite));
+      float sat = min(0.85, max(s * u_cyanSatBoost, u_cyanSat)) * mix(0.30, 1.0, shadow);
+      return hsl2rgb(vec3(u_blueHue, sat, l));
     }
 
     void main() {
@@ -211,7 +211,6 @@
       }
 
       vec3 hsl = rgb2hsl(c);
-      float h = hsl.x;
       float s = hsl.y;
       float l = hsl.z;
       float chroma = max(max(c.r, c.g), c.b) - min(min(c.r, c.g), c.b);
@@ -225,56 +224,51 @@
         return;
       }
 
-      bool inViolet = h >= 0.70 && h < 0.83;
-      bool inPink = h >= 0.83 && h < 0.97;
-      bool inRose = h >= 0.97 || h < 0.12;
-      // Cyan / turquoise (TV 2-ball) — between green and blue
-      bool inCyan = h >= 0.45 && h < 0.58;
-
-      // Per-ball gating (strict): each colour remap applies ONLY inside its
-      // ball's disk (1.35× margin for detection/upsample slop). A class with
-      // no detected ball is NOT remapped at all — at most one ball of each
-      // colour exists, so colour-only remapping of un-found ranges is what
-      // causes spill (dark pink on the 4 reading as orange on the 5).
-      bool inFive = u_five.z > 0.0 && distance(bp, u_five.xy) <= u_five.z * 1.35;
-      bool inFour = u_four.z > 0.0 && distance(bp, u_four.xy) <= u_four.z * 1.35;
-      bool inTwo = u_two.z > 0.0 && distance(bp, u_two.xy) <= u_two.z * 1.35;
+      bool inFive = u_five.z > 0.0 && distance(bp, u_five.xy) <= u_five.z;
+      bool inFour = u_four.z > 0.0 && distance(bp, u_four.xy) <= u_four.z;
+      bool inTwo = u_two.z > 0.0 && distance(bp, u_two.xy) <= u_two.z;
+      bool inBall = inFive || inFour || inTwo;
       vec3 outc = c;
-      float blueBias = c.b - c.g;
-      float br = c.b / max(c.r, 0.001);
-      bool hasPurpleRed = c.r > 0.10 && c.r > c.b * 0.22;
-      // Cyan: G and B both beat R; the green 6 (g−b ≈ 27/255) is excluded by
-      // the same absolute-gap rule as the classifier (b >= g − 12).
-      bool looksCyan = c.g > c.r + 0.04 && c.b > c.r + 0.04
-        && c.b > c.g - 0.05 && c.g > c.b * 0.55;
 
-      if (u_orangeEnabled > 0.5 && inFive && inViolet && s > 0.10 && hasPurpleRed) {
-        outc = toOrange(s, l);
-      } else if (u_pinkEnabled > 0.5 && inFour && s >= max(u_pinkSatMin, 0.14)
-          && chroma > 0.12
-          && ((inPink && blueBias >= u_pinkBlueBias && br >= u_pinkMinBlueRatio)
-            || (inRose && c.r > c.g + 0.18 && c.r > c.b + 0.18
-              && abs(c.b - c.g) <= 0.08 && l > 0.55))) {
-        // Two pink flavours, per balls.js classify: the magenta rose (blue
-        // bias, Rust-lab fixture) and the broadcast SALMON 4 [222,141,128]
-        // (r ≫ b ≈ g, hue in the rose band). Same separators as the
-        // classifier: red 3 / brown 7 are darker (l ≤ 0.5) or b ≪ g.
-        outc = toPurple(s, l);
-      } else if (u_orangeEnabled > 0.5 && inFive && inRose) {
-        bool looksMauve = c.r > 0.10
-          && c.g / c.r >= u_mauveRatio * 0.85
-          && br >= u_mauveRatio * 0.85
-          && abs(c.b - c.g) <= 0.12
-          && s >= 0.06
-          && s < min(u_mauveSatMax, 0.40)
-          && chroma > 0.06
-          && l > 0.10 && l < 0.85;
-        if (looksMauve && s >= u_mauveSatMin) {
+      // Outside every disk the strict generic guards still hold (nothing is
+      // remapped out there anyway — this keeps felt/grey speckle handling
+      // identical to the pre-disk behaviour).
+      if (!inBall && (s < 0.06 || chroma < 0.10 || l > 0.93)) {
+        gl_FragColor = tex;
+        return;
+      }
+      if (!inBall && l < 0.16 && (s < 0.22 || chroma < 0.14)) {
+        gl_FragColor = tex;
+        return;
+      }
+
+      // Whole-ball tone remap: inside a verified disk, remap EVERY pixel
+      // that isn't specular glare, the white number print / near-neutral
+      // grey, or blue-grey FELT — all tones and hues (highlight, body,
+      // shadow side) — preserving each pixel's exact lightness (toXxx keeps
+      // l). Felt is blue-grey (G and B both beat R); the mauve/salmon balls
+      // keep R ≥ G, so the ordering separates them where chroma cannot
+      // (this arena's felt chroma ≈ the ball's). The turquoise 2 shares the
+      // felt's channel ordering, so felt there must additionally be
+      // low-chroma and low B−G. Classes without a verified ball are never
+      // remapped.
+      if (u_orangeEnabled > 0.5 && inFive) {
+        // Mauve's darkest bottom shades are blue-dominant with G ≈ R
+        // (G−R ≈ 4/255) — only felt at G−R ≥ 5 is excluded (lit felt sits
+        // at G−R ≥ 6 even shadowed).
+        if (!(l > 0.94 || chroma < 0.06 || (c.g > c.r + 0.02 && c.b > c.r))) {
           outc = toOrange(s, l);
         }
-      } else if (u_cyanEnabled > 0.5 && inTwo && inCyan && looksCyan
-          && s >= u_cyanSatMin && chroma > 0.12) {
-        outc = toBlue(s, l);
+      } else if (u_pinkEnabled > 0.5 && inFour) {
+        if (!(l > 0.94 || chroma < 0.06 || (c.g > c.r + 0.012 && c.b > c.r))) {
+          outc = toPurple(s, l);
+        }
+      } else if (u_cyanEnabled > 0.5 && inTwo) {
+        bool feltLike = c.g > c.r + 0.012 && c.b > c.r
+          && (c.b - c.g) < 0.098 && chroma < 0.176;
+        if (!(l > 0.94 || chroma < 0.06 || feltLike)) {
+          outc = toBlue(s, l);
+        }
       }
 
       gl_FragColor = vec4(outc, tex.a);
@@ -614,7 +608,7 @@
       // Throttled diagnostics: classifier output every ~2.5 s, for DevTools.
       if (res.balls && now - (tableState.lastLog || 0) > 2500) {
         tableState.lastLog = now;
-        const f = (x) => x ? `${x.cls || ''}(${x.cx.toFixed(0)},${x.cy.toFixed(0)}) r${x.r.toFixed(1)} rgb[${x.rgb}] p${(x.purity ?? 0).toFixed(2)}` : 'none';
+        const f = (x) => x ? `${x.cls || ''}(${x.cx.toFixed(0)},${x.cy.toFixed(0)}) r${x.r.toFixed(1)}${x.br ? ` b${x.br.toFixed(0)}` : ''} rgb[${x.rgb}] p${(x.purity ?? 0).toFixed(2)}` : 'none';
         console.debug(`Orange Five balls [cycle ${tableState.frame}]: five=${f(res.balls.five)} four=${f(res.balls.four)} two=${f(res.balls.two)}`);
       }
       // Per-ball classification result → height-normalised disks for the
@@ -623,7 +617,13 @@
       // the classifier flickers on shadowed/moving balls, and blinking disks
       // would blink the remaps themselves.
       const k = 1 / res.h;
-      const disk = (b) => b ? [b.cx * k, b.cy * k, b.r * k] : null;
+      // Radius: prefer the stage-2 tight ball radius (`br`, native px) over
+      // the area-derived mask r — br hugs the ball's own classified pixels
+      // (plus ~2 px), so the whole-ball remap disk excludes the felt margin
+      // that the mask-res blob overshoots into. Units stay px/h: native px
+      // over video height.
+      const disk = (b) => b ? [b.cx * k, b.cy * k,
+        b.br ? b.br / video.videoHeight : b.r * k] : null;
       const fresh = res.balls ? {
         five: disk(res.balls.five),
         four: disk(res.balls.four),
