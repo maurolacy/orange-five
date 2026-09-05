@@ -100,6 +100,8 @@
     phantomDist: 1.3,   // five-centre within 1.3×four-r → the four's shadow
     hotPinkFrac: 0.4,   // five blob whose area contains ≥40% saturated-rose
                         // pixels IS the 4 (its shadow side) → reject
+    minPurity: 0.35,    // disk-level: ≥35% of the ball's disk must classify
+                        // as the class, AND the disk mean must classify too
   };
 
   /**
@@ -136,7 +138,16 @@
     for (const cls of ['five', 'four', 'two']) {
       const m = morphClose(masks[cls], w, h, 2);
       const res = biggestBlob(m, data, w, h);
-      if (res) winners[cls] = res;
+      if (!res) continue;
+      // Stage-2 decision at the BALL level: the per-pixel gates are generous
+      // (recall), so borderline pixels flip bands frame-to-frame — the
+      // per-frame instability you saw. The ball's DISK mean colour (averaged
+      // over ~100 px) is stable, and its purity (fraction of disk pixels
+      // classifying as this class) separates look-alikes: the red 3's disk
+      // is mostly red (purity ~0.1), the 5's disk mostly mauve (purity ~0.6+).
+      const st = diskStats(cls, data, region, w, h, res.cx, res.cy, res.r);
+      if (st.mean !== cls || st.purity < GATES.minPurity) continue;
+      winners[cls] = { ...res, purity: st.purity, rgb: st.rgb };
     }
 
     // Phantom-5 guard #1: the four's desaturated shadow side classifies
@@ -161,6 +172,30 @@
       if (hot > GATES.hotPinkFrac * area) winners.five = null;
     }
     return winners;
+  }
+
+  /** Ball-level stats over the candidate's disk: mean colour + purity
+   * (fraction of disk pixels — felt, highlight, shadow included — that
+   * classify as `cls`). This is the STABLE signal; per-pixel classification
+   * flickers, the disk mean does not. */
+  function diskStats(cls, data, region, w, h, cx, cy, r) {
+    let n = 0, match = 0, sr = 0, sg = 0, sb = 0;
+    const R2 = r * r;
+    for (let y = Math.max(0, Math.floor(cy - r)); y <= Math.min(h - 1, Math.ceil(cy + r)); y++) {
+      for (let x = Math.max(0, Math.floor(cx - r)); x <= Math.min(w - 1, Math.ceil(cx + r)); x++) {
+        const dx = x - cx, dy = y - cy;
+        if (dx * dx + dy * dy > R2) continue;
+        const i = y * w + x;
+        if (!region[i]) continue;
+        const p = i * 4;
+        const R = data[p], G = data[p + 1], B = data[p + 2];
+        n++;
+        sr += R; sg += G; sb += B;
+        if (classify(R, G, B) === cls) match++;
+      }
+    }
+    const rgb = n ? [Math.round(sr / n), Math.round(sg / n), Math.round(sb / n)] : [0, 0, 0];
+    return { n, purity: n ? match / n : 0, rgb, mean: n ? classify(rgb[0], rgb[1], rgb[2]) : null };
   }
 
   /** Separable square close (r small — ball fragments, not felt bites):

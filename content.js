@@ -608,7 +608,7 @@
       // Throttled diagnostics: classifier output every ~2.5 s, for DevTools.
       if (res.balls && now - (tableState.lastLog || 0) > 2500) {
         tableState.lastLog = now;
-        const f = (x) => x ? `${x.cls || ''}(${x.cx.toFixed(0)},${x.cy.toFixed(0)}) r${x.r.toFixed(1)} rgb[${x.rgb}]` : 'none';
+        const f = (x) => x ? `${x.cls || ''}(${x.cx.toFixed(0)},${x.cy.toFixed(0)}) r${x.r.toFixed(1)} rgb[${x.rgb}] p${(x.purity ?? 0).toFixed(2)}` : 'none';
         console.debug(`Orange Five balls [cycle ${tableState.frame}]: five=${f(res.balls.five)} four=${f(res.balls.four)} two=${f(res.balls.two)}`);
       }
       // Per-ball classification result → height-normalised disks for the
