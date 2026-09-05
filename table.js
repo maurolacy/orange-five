@@ -159,11 +159,23 @@
     return 0;
   }
 
+  // --- Scratch pools -----------------------------------------------------------
+  // Internal-only buffers, reused across analyse() calls. OUTPUTS (felt,
+  // region, maskU8, fromBorder, filled, bumps) are always fresh — callers
+  // hold them across calls (content.js upload-skip, test assertions). The
+  // parked refactor/analyze branch pooled carelessly and broke this.
+  const POOL = {};
+  function poolBuf(name, Ctor, n) {
+    let b = POOL[name];
+    if (!b || b.length < n) { b = new Ctor(n); POOL[name] = b; }
+    return b;
+  }
+
   /** Square-kernel dilate, separable (row pass + column pass — a square SE
    * factors, so this is bit-identical to the naive 2-D scan but O(n·r)
    * instead of O(n·r²); the ball-scale close below needs r ≈ 12-28. */
   function dilate(src, w, h, r) {
-    const tmp = new Uint8Array(src.length);
+    const tmp = poolBuf('dilTmp', Uint8Array, src.length);
     const out = new Uint8Array(src.length);
     for (let y = 0; y < h; y++) {
       const row = y * w;
@@ -192,7 +204,7 @@
 
   /** Square-kernel erode, separable (see dilate). */
   function erode(src, w, h, r) {
-    const tmp = new Uint8Array(src.length);
+    const tmp = poolBuf('eroTmp', Uint8Array, src.length);
     const out = new Uint8Array(src.length);
     for (let y = 0; y < h; y++) {
       const row = y * w;
@@ -232,45 +244,34 @@
     return dilate(erode(src, w, h, r), w, h, r);
   }
 
-  /** Keep only the largest 4-connected component (in place). */
+  /** Keep only the largest 4-connected component (in place). Labels once,
+   * then rewrites fg from the labels — no full-mask copy, no second flood. */
   function keepLargestComponent(fg, w, h) {
     const n = fg.length;
-    const orig = fg.slice();
-    const visited = new Uint8Array(n);
-    const stack = new Int32Array(n);
-    let bestStart = -1, bestCount = 0;
+    const comp = poolBuf('klcComp', Int32Array, n);
+    comp.fill(0, 0, n);
+    const queue = poolBuf('klcQueue', Int32Array, n);
+    let bestCount = 0, bestId = 0, nextId = 1;
 
     for (let start = 0; start < n; start++) {
-      if (!orig[start] || visited[start]) continue;
+      if (!fg[start] || comp[start]) continue;
       let sp = 0, count = 0;
-      stack[sp++] = start;
-      visited[start] = 1;
+      queue[sp++] = start;
+      comp[start] = nextId;
       while (sp > 0) {
-        const i = stack[--sp];
+        const i = queue[--sp];
         count++;
         const x = i % w, y = (i / w) | 0;
-        if (x > 0 && orig[i - 1] && !visited[i - 1]) { visited[i - 1] = 1; stack[sp++] = i - 1; }
-        if (x < w - 1 && orig[i + 1] && !visited[i + 1]) { visited[i + 1] = 1; stack[sp++] = i + 1; }
-        if (y > 0 && orig[i - w] && !visited[i - w]) { visited[i - w] = 1; stack[sp++] = i - w; }
-        if (y < h - 1 && orig[i + w] && !visited[i + w]) { visited[i + w] = 1; stack[sp++] = i + w; }
+        if (x > 0 && fg[i - 1] && !comp[i - 1]) { comp[i - 1] = nextId; queue[sp++] = i - 1; }
+        if (x < w - 1 && fg[i + 1] && !comp[i + 1]) { comp[i + 1] = nextId; queue[sp++] = i + 1; }
+        if (y > 0 && fg[i - w] && !comp[i - w]) { comp[i - w] = nextId; queue[sp++] = i - w; }
+        if (y < h - 1 && fg[i + w] && !comp[i + w]) { comp[i + w] = nextId; queue[sp++] = i + w; }
       }
-      if (count > bestCount) { bestCount = count; bestStart = start; }
+      if (count > bestCount) { bestCount = count; bestId = nextId; }
+      nextId++;
     }
 
-    fg.fill(0);
-    if (bestStart >= 0) {
-      let sp = 0;
-      stack[sp++] = bestStart;
-      fg[bestStart] = 1;
-      while (sp > 0) {
-        const i = stack[--sp];
-        const x = i % w, y = (i / w) | 0;
-        if (x > 0 && orig[i - 1] && !fg[i - 1]) { fg[i - 1] = 1; stack[sp++] = i - 1; }
-        if (x < w - 1 && orig[i + 1] && !fg[i + 1]) { fg[i + 1] = 1; stack[sp++] = i + 1; }
-        if (y > 0 && orig[i - w] && !fg[i - w]) { fg[i - w] = 1; stack[sp++] = i - w; }
-        if (y < h - 1 && orig[i + w] && !fg[i + w]) { fg[i + w] = 1; stack[sp++] = i + w; }
-      }
-    }
+    for (let i = 0; i < n; i++) fg[i] = comp[i] === bestId ? 1 : 0;
     return bestCount;
   }
 
@@ -278,7 +279,7 @@
   function floodFromBorder(isCloth, w, h) {
     const n = isCloth.length;
     const reached = new Uint8Array(n);
-    const queue = new Int32Array(n);
+    const queue = poolBuf('floodQ', Int32Array, n);
     let qh = 0, qt = 0;
     const push = (i) => {
       if (!isCloth[i] && !reached[i]) { reached[i] = 1; queue[qt++] = i; }
@@ -321,8 +322,9 @@
   function fillBorderHoles(felt, fromBorder, w, h, feltCount) {
     const n = w * h;
     const filled = new Uint8Array(n);
-    const comp = new Int32Array(n);   // 0 = unvisited, else component id (1-based)
-    const queue = new Int32Array(n);
+    const comp = poolBuf('fillComp', Int32Array, n);   // 0 = unvisited, else component id (1-based)
+    comp.fill(0, 0, n);
+    const queue = poolBuf('fillQ', Int32Array, n);
     const ok = [];                    // per component id: passes the gates
     let nextId = 1;
     for (let start = 0; start < n; start++) {
@@ -386,6 +388,9 @@
    */
   function analyseData(data, w, h, thresh) {
     const n = w * h;
+    const T = [];
+    const mark = (label) => T.push([label, performance.now()]);
+    mark('start');
     // 1. Seed: median of grey-blue felt-like pixels (falls back to global
     //    median when few — mirrors cloth.rs). Two-pass: bright-studio band
     //    first; if the frame is a dark arena (fail1: felt at L ≈ 0.2–0.35)
@@ -409,6 +414,7 @@
     const rough = useSeed
       ? medianRgbMasked(data, w, h, (i, r, g, b) => isFeltSeed(r, g, b, dim))
       : medianRgb(data, null, n);
+    mark('seed');
 
     // 2. Classify twice (rough, then refined median) — cloth.rs. In dim mode
     //    the frame mixes bed felt with blue-lit surround (spotlight gradient),
@@ -433,6 +439,7 @@
       felt = classifyAll(data, w, h, clothRgb, thresh, dim, 0);
     }
 
+    mark('classify');
     // 3. Morphology: close bridges felt gaps (baulk line, spots); open severs
     //    thin necks — a grey shirt leaning over the rail would otherwise weld
     //    the player to the slate (largest-component then keeps only the bed).
@@ -448,8 +455,9 @@
     felt = morphOpen(felt, w, h, openR);
     keepLargestComponent(felt, w, h);
 
+    mark('morph');
     // 3c. Shadow extension (bright mode only): broadcast arenas light a
-    //     sliver of the bed (fail3: 3.2%) and leave the rest in deep shadow —
+    //     sliver of the bed and leave the rest in deep shadow —
     //     far below the bright lightness band, so classification stops at the
     //     lit edge and the 4%-acceptance gate reads "nowhere". Dim mode can't
     //     help: it only fires when NO bright seed exists. So admit darker
@@ -466,7 +474,8 @@
       const aL = (Math.max(rf, gf, bf) + Math.min(rf, gf, bf)) / 2;
       const sFloor = 0.06, sCeil = aL - 0.30;
       if (sCeil > sFloor) {
-        const shadow = new Uint8Array(n);
+        const shadow = poolBuf('shadowM', Uint8Array, n);
+        shadow.fill(0, 0, n);
         let shadowCount = 0;
         for (let i = 0, p = 0; i < n; i++, p += 4) {
           if (felt[i]) continue;
@@ -480,8 +489,9 @@
         }
         if (shadowCount > 0) {
           // Keep shadow components that touch the felt (4-adjacent).
-          const comp = new Int32Array(n);
-          const queue = new Int32Array(n);
+          const comp = poolBuf('shadowComp', Int32Array, n);
+          comp.fill(0, 0, n);
+          const queue = poolBuf('shadowQ', Int32Array, n);
           const compOk = [];
           let nextId = 1;
           for (let start = 0; start < n; start++) {
@@ -541,11 +551,14 @@
     let preCount = 0;
     for (let i = 0; i < n; i++) preCount += felt[i];
     const ballR = Math.min(28, Math.max(12, Math.round(0.05 * Math.sqrt(preCount))));
+    mark('shadow');
     const preBallClose = felt;
     felt = morphClose(felt, w, h, ballR);
+    mark('ballclose');
 
     // 4. Border flood: reachable-from-outside vs enclosed.
     const fromBorder = floodFromBorder(felt, w, h);
+    mark('flood');
     let feltCount = 0;
     for (let i = 0; i < n; i++) feltCount += felt[i];
 
@@ -555,6 +568,7 @@
     // feltFraction and the debug felt view stay truthful about the cloth.
     const { filled, filledCount } =
       fillBorderHoles(felt, fromBorder, w, h, feltCount);
+    mark('fill');
 
     // 4.6 Complete the ball: the close (3b) fills only the felt-side half of
     //     a rail ball; the outer half sits over the rail, outside the region,
@@ -563,6 +577,7 @@
     //     felt: same remap outcome, debug stays truthful about cloth.
     const bumps = new Uint8Array(n);
     let bumpCount = 0;
+    mark('bumps-start');
     {
       // Close-added pixels. The close also SMOOTHS classifier-boundary
       // jaggedness into long thin runs (esp. along near-horizontal band
@@ -570,10 +585,11 @@
       // live "over-extends horizontally" symptom. So first keep only the
       // ball-like blobs of `added`: compact, ball-scaled area, bbox aspect
       // ≤ 2. Long thin runs fail the aspect gate and are not bumped.
-      const added = new Uint8Array(n);
+      const added = poolBuf('bumpAdded', Uint8Array, n);
       for (let i = 0; i < n; i++) added[i] = felt[i] && !preBallClose[i] ? 1 : 0;
-      const comp = new Int32Array(n);
-      const queue = new Int32Array(n);
+      const comp = poolBuf('bumpComp', Int32Array, n);
+      comp.fill(0, 0, n);
+      const queue = poolBuf('bumpQ', Int32Array, n);
       const pixels = [];                 // current component's pixel indices
       const compOk = [];                 // per component id: ball-like?
       let nextId = 1;
@@ -663,15 +679,26 @@
     // "yellow".)
     const region = new Uint8Array(n);
     const maskU8 = new Uint8Array(n);
+    mark('bumps');
     for (let i = 0; i < n; i++) {
       if (felt[i]) { region[i] = 1; maskU8[i] = 255; }
       else if (filled[i] || bumps[i] || !fromBorder[i]) { region[i] = 1; maskU8[i] = 128; }
     }
+    mark('mask');
+    // Per-step timings (ms since 'start') — perf work + live tuning.
+    const timings = {};
+    let prev = T[0][1];
+    for (let k = 1; k < T.length; k++) {
+      timings[T[k][0]] = Math.round((T[k][1] - prev) * 10) / 10;
+      prev = T[k][1];
+    }
+    timings.total = Math.round((performance.now() - T[0][1]) * 10) / 10;
     return {
       w, h, clothRgb,
       felt, region, maskU8, fromBorder, filled, bumps,
       feltFraction: feltCount / n,
       filledCount, bumpCount,
+      timings,
     };
   }
 
