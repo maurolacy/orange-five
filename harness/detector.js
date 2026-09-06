@@ -662,9 +662,3 @@ function detectFive(data, w, h, opts = {}) {
 }
 
 module.exports = { detectFive, rgbToHsl, classify, fitCircle, arcCoverage };
-
-// Browser global for the harness page (detector.js is loaded before app.js).
-if (typeof window !== 'undefined') {
-  window.detectFive = detectFive;
-  window.o5 = { classify, rgbToHsl, fitCircle };
-}

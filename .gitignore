@@ -8,5 +8,8 @@ node_modules/
 harness/debug/
 .ofd-out/
 
+# Signed HLS URLs — expiring, local-only debug material (never commit)
+harness/urls.txt
+
 # OS noise
 .DS_Store
