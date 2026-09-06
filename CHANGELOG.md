@@ -9,6 +9,26 @@ video.
 
 ## [Unreleased]
 
+### Changed
+
+- **Remap targets from the official Predator Arcos II rack** (the "exact
+  target tonalities" TODO; reference `docs/Predator_Arcos_II.webp`): hues
+  sampled from the solid 5 / 4 / 2's lit body in the promo photo, sat floors
+  treating the reference colours as FULLY saturated (the arena wash only
+  lowered measured HSL sat — body tones measured 0.27–1.0 by lightness, so
+  floors go to ~0.9). Orange (5): hue 32°→22°, sat floor 0.60→0.90.
+  Purple (4): hue 258°→290°, sat floor 0.88 (unchanged), toPurple cap
+  0.82→0.92 — the photo's warm cast reads the violet at 306°, which goes
+  magenta at full sat; 290° (between the ball's cooler shadow side 296–300°
+  and neutral Aramith-style 288°) matches the Arcos violet vividly. Blue (2): hue 220°→215°, sat floor 0.70→0.92 (measured ≈0.94
+  even in the wash), toBlue cap 0.85→0.95. `popup.js` DEFAULTS updated to
+  match — existing stored settings keep the old sats until a popup **Reset**.
+  `harness/preview.js` TARGETS mirror all three plus an explicit per-class
+  saturation `cap` so the CPU replica keeps matching the shader exactly.
+  Live-watch: the reference was shot under warm arena light, so hues may sit
+  ~5–10° red of brand-neutral — nudge `orangeHue`/`purpleHue`/`blueHue` if
+  the live look drifts.
+
 ## [2.4.1] — 2026-09-05
 
 ### Added
