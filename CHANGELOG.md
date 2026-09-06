@@ -9,6 +9,8 @@ video.
 
 ## [Unreleased]
 
+## [2.5.0] — 2026-09-06
+
 ### Removed
 
 - **Selectivity sliders** (the "Sense" knobs) — retired from the popup. With
