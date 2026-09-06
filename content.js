@@ -23,19 +23,24 @@
     tableEnabled: true, // gate remaps to the detected table region
     tableDebug: false,  // visualize the table mask instead of the video
     ballsEnabled: true, // per-ball colour gating (TODO #4)
-    orangeHue: 32 / 360,
-    orangeSat: 0.60,
+    // Remap targets from the official Predator Arcos II rack
+    // (docs/Predator_Arcos_II.webp): hue = median of the ball's lit body.
+    // Sat floors treat the reference colours as FULLY saturated (the promo
+    // photo's arena wash only lowered measured HSL sat) — floors sit at
+    // ~0.9 so the remapped balls read as vivid as the real balls.
+    orangeHue: 22 / 360,
+    orangeSat: 0.90,
     orangeSatBoost: 1.7,
     orangeLift: 0.06,
     orangeSense: 0.75,
     mauveSatMin: 0.05,
     mauveSatMax: 0.48,
-    purpleHue: 258 / 360,
+    purpleHue: 290 / 360, // raw photo read 306° but under the promo's warm cast; 290° matches the Arcos violet at full sat (284–296° both plausible)
     pinkSat: 0.88,
     pinkSatBoost: 1.15,
     pinkSense: 0.50,
-    blueHue: 220 / 360,
-    cyanSat: 0.70,
+    blueHue: 215 / 360,
+    cyanSat: 0.92,
     cyanSatBoost: 1.2,
     cyanSense: 0.55,
   };
@@ -153,13 +158,13 @@
 
     vec3 toPurple(float s, float l) {
       float shadow = smoothstep(0.03, 0.40, l);
-      float sat = min(0.82, max(s * u_pinkSatBoost, u_pinkSat)) * mix(0.35, 1.0, shadow);
+      float sat = min(0.92, max(s * u_pinkSatBoost, u_pinkSat)) * mix(0.35, 1.0, shadow);
       return hsl2rgb(vec3(u_purpleHue, sat, l));
     }
 
     vec3 toBlue(float s, float l) {
       float shadow = smoothstep(0.03, 0.40, l);
-      float sat = min(0.85, max(s * u_cyanSatBoost, u_cyanSat)) * mix(0.30, 1.0, shadow);
+      float sat = min(0.95, max(s * u_cyanSatBoost, u_cyanSat)) * mix(0.30, 1.0, shadow);
       return hsl2rgb(vec3(u_blueHue, sat, l));
     }
 

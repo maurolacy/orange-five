@@ -5,11 +5,11 @@ const DEFAULTS = {
   cyanEnabled: false,
   tableEnabled: true,
   tableDebug: false,
-  orangeSat: 0.60,
+  orangeSat: 0.90,
   orangeSense: 0.75,
   pinkSat: 0.88,
   pinkSense: 0.50,
-  cyanSat: 0.70,
+  cyanSat: 0.92,
   cyanSense: 0.55,
 };
 
