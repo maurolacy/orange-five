@@ -9,6 +9,8 @@ video.
 
 ## [Unreleased]
 
+## [2.4.2] — 2026-09-06
+
 ### Changed
 
 - **Remap targets from the official Predator Arcos II rack** (the "exact
