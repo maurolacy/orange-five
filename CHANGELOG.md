@@ -9,6 +9,18 @@ video.
 
 ## [Unreleased]
 
+### Removed
+
+- **Selectivity sliders** (the "Sense" knobs) — retired from the popup. With
+  the per-ball disk gating (#4) and the Arcos II saturation floors in place,
+  detection strictness is no longer worth tuning per-event: the shader's
+  detection thresholds (`mauveRatio`, `pinkSatMin`, `pinkBlueBias`,
+  `pinkMinBlueRatio`, `cyanSatMin`) are now baked-in constants equal to the
+  former slider defaults (orangeSense 0.75, pinkSense 0.50, cyanSense 0.55),
+  so behaviour is unchanged. Per-remap **Saturation** sliders stay. Stale
+  `orangeSense`/`pinkSense`/`cyanSense` keys are dropped from
+  `chrome.storage.sync` on both popup and content-script load.
+
 ## [2.4.2] — 2026-09-06
 
 ### Changed
