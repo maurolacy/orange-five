@@ -19,7 +19,7 @@
     enabled: true,
     orangeEnabled: true,
     pinkEnabled: true,
-    cyanEnabled: false, // optional: TV cyan 2-ball → blue
+    cyanEnabled: true,
     tableEnabled: true, // gate remaps to the detected table region
     tableDebug: false,  // visualize the table mask instead of the video
     ballsEnabled: true, // per-ball colour gating (TODO #4)
