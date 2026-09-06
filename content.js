@@ -32,41 +32,27 @@
     orangeSat: 0.90,
     orangeSatBoost: 1.7,
     orangeLift: 0.06,
-    orangeSense: 0.75,
     mauveSatMin: 0.05,
     mauveSatMax: 0.48,
     purpleHue: 290 / 360, // raw photo read 306° but under the promo's warm cast; 290° matches the Arcos violet at full sat (284–296° both plausible)
     pinkSat: 0.88,
     pinkSatBoost: 1.15,
-    pinkSense: 0.50,
     blueHue: 215 / 360,
     cyanSat: 0.92,
     cyanSatBoost: 1.2,
-    cyanSense: 0.55,
   };
 
   const config = Object.assign({}, DEFAULTS);
 
-  function mauveRatio() {
-    return 0.30 + config.orangeSense * 0.35;
-  }
-
-  function pinkSatMin() {
-    return 0.12 + config.pinkSense * 0.20;
-  }
-
-  function pinkMinBlueRatio() {
-    return 0.50 + config.pinkSense * 0.22;
-  }
-
-  function pinkBlueBias() {
-    return 0.01 + config.pinkSense * 0.05;
-  }
-
-  // Higher selectivity → higher sat floor (spares green cloth / 6-ball)
-  function cyanSatMin() {
-    return 0.14 + config.cyanSense * 0.22;
-  }
+  // Detection thresholds as fixed constants. The old "Selectivity" sliders
+  // were removed; these bake in their former default positions
+  // (orangeSense 0.75, pinkSense 0.50, cyanSense 0.55).
+  const MAUVE_RATIO = 0.30 + 0.75 * 0.35;         // 0.5625
+  const PINK_SAT_MIN = 0.12 + 0.50 * 0.20;        // 0.22
+  const PINK_MIN_BLUE_RATIO = 0.50 + 0.50 * 0.22; // 0.61
+  const PINK_BLUE_BIAS = 0.01 + 0.50 * 0.05;      // 0.035
+  // Higher sat floor (spares green cloth / 6-ball)
+  const CYAN_SAT_MIN = 0.14 + 0.55 * 0.22;        // 0.261
 
   const VERT = `
     attribute vec2 a_pos;
@@ -523,17 +509,17 @@
           gl.uniform1f(locs.pinkSatBoost, config.pinkSatBoost);
           gl.uniform1f(locs.mauveSatMin, config.mauveSatMin);
           gl.uniform1f(locs.mauveSatMax, config.mauveSatMax);
-          gl.uniform1f(locs.mauveRatio, mauveRatio());
-          gl.uniform1f(locs.pinkSatMin, pinkSatMin());
-          gl.uniform1f(locs.pinkBlueBias, pinkBlueBias());
-          gl.uniform1f(locs.pinkMinBlueRatio, pinkMinBlueRatio());
+          gl.uniform1f(locs.mauveRatio, MAUVE_RATIO);
+          gl.uniform1f(locs.pinkSatMin, PINK_SAT_MIN);
+          gl.uniform1f(locs.pinkBlueBias, PINK_BLUE_BIAS);
+          gl.uniform1f(locs.pinkMinBlueRatio, PINK_MIN_BLUE_RATIO);
           gl.uniform1f(locs.orangeEnabled, config.orangeEnabled ? 1.0 : 0.0);
           gl.uniform1f(locs.pinkEnabled, config.pinkEnabled ? 1.0 : 0.0);
           gl.uniform1f(locs.cyanEnabled, config.cyanEnabled ? 1.0 : 0.0);
           gl.uniform1f(locs.blueHue, config.blueHue);
           gl.uniform1f(locs.cyanSat, config.cyanSat);
           gl.uniform1f(locs.cyanSatBoost, config.cyanSatBoost);
-          gl.uniform1f(locs.cyanSatMin, cyanSatMin());
+          gl.uniform1f(locs.cyanSatMin, CYAN_SAT_MIN);
           gl.uniform1f(locs.debugMask, config.tableDebug ? 1.0 : 0.0);
           gl.uniform1f(locs.aspect,
             (video.videoWidth / Math.max(1, video.videoHeight)) || 1.0);
@@ -736,6 +722,8 @@
 
   function loadSettings(cb) {
     try {
+      // Remove keys left behind by the retired "Selectivity" sliders.
+      chrome.storage.sync.remove(['orangeSense', 'pinkSense', 'cyanSense']);
       chrome.storage.sync.get(DEFAULTS, (stored) => {
         Object.assign(config, stored);
         if (cb) cb();

@@ -6,18 +6,18 @@ const DEFAULTS = {
   tableEnabled: true,
   tableDebug: false,
   orangeSat: 0.90,
-  orangeSense: 0.75,
   pinkSat: 0.88,
-  pinkSense: 0.50,
   cyanSat: 0.92,
-  cyanSense: 0.55,
 };
+
+// The "Selectivity" sliders are gone; drop their stale stored values so they
+// can't linger in chrome.storage.sync.
+chrome.storage.sync.remove(['orangeSense', 'pinkSense', 'cyanSense']);
 
 const KEYS = [
   'enabled', 'orangeEnabled', 'pinkEnabled', 'cyanEnabled',
   'tableEnabled', 'tableDebug',
-  'orangeSat', 'orangeSense', 'pinkSat', 'pinkSense',
-  'cyanSat', 'cyanSense',
+  'orangeSat', 'pinkSat', 'cyanSat',
 ];
 
 const els = {
@@ -33,16 +33,10 @@ const els = {
   cyanSection: document.getElementById('cyanSection'),
   orangeSat: document.getElementById('orangeSat'),
   orangeSatOut: document.getElementById('orangeSatOut'),
-  orangeSense: document.getElementById('orangeSense'),
-  orangeSenseOut: document.getElementById('orangeSenseOut'),
   pinkSat: document.getElementById('pinkSat'),
   pinkSatOut: document.getElementById('pinkSatOut'),
-  pinkSense: document.getElementById('pinkSense'),
-  pinkSenseOut: document.getElementById('pinkSenseOut'),
   cyanSat: document.getElementById('cyanSat'),
   cyanSatOut: document.getElementById('cyanSatOut'),
-  cyanSense: document.getElementById('cyanSense'),
-  cyanSenseOut: document.getElementById('cyanSenseOut'),
   reset: document.getElementById('reset'),
 };
 
@@ -59,11 +53,8 @@ function readUi() {
     tableEnabled: els.tableEnabled.checked,
     tableDebug: els.tableDebug.checked,
     orangeSat: Number(els.orangeSat.value),
-    orangeSense: Number(els.orangeSense.value),
     pinkSat: Number(els.pinkSat.value),
-    pinkSense: Number(els.pinkSense.value),
     cyanSat: Number(els.cyanSat.value),
-    cyanSense: Number(els.cyanSense.value),
   };
 }
 
@@ -75,22 +66,16 @@ function writeUi(settings) {
   els.tableEnabled.checked = settings.tableEnabled !== false;
   els.tableDebug.checked = !!settings.tableDebug;
   els.orangeSat.value = settings.orangeSat;
-  els.orangeSense.value = settings.orangeSense;
   els.pinkSat.value = settings.pinkSat;
-  els.pinkSense.value = settings.pinkSense;
   els.cyanSat.value = settings.cyanSat;
-  els.cyanSense.value = settings.cyanSense;
   syncOutputs();
   syncDisabledState();
 }
 
 function syncOutputs() {
   els.orangeSatOut.textContent = fmt(els.orangeSat.value);
-  els.orangeSenseOut.textContent = fmt(els.orangeSense.value);
   els.pinkSatOut.textContent = fmt(els.pinkSat.value);
-  els.pinkSenseOut.textContent = fmt(els.pinkSense.value);
   els.cyanSatOut.textContent = fmt(els.cyanSat.value);
-  els.cyanSenseOut.textContent = fmt(els.cyanSense.value);
 }
 
 function syncDisabledState() {
@@ -142,7 +127,7 @@ els.reset.addEventListener('click', () => {
 });
 
 // Sliders: debounce while dragging, flush on release
-['orangeSat', 'orangeSense', 'pinkSat', 'pinkSense', 'cyanSat', 'cyanSense'].forEach((id) => {
+['orangeSat', 'pinkSat', 'cyanSat'].forEach((id) => {
   els[id].addEventListener('input', persistDebounced);
   els[id].addEventListener('change', persistNow);
 });

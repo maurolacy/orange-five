@@ -54,7 +54,6 @@ Open the extension popup:
 | **Pink → purple (4)** | Restores a more classic 4; can spill onto reds — disable if needed |
 | **Cyan → blue (2)** | Optional; off by default (can tint grey cloth) |
 | **Saturation** | How vivid the remapped colour is |
-| **Selectivity** | Higher = stricter detection, less spill onto nearby hues |
 
 Toggle **On** off anytime to compare with the original stream colours.
 
@@ -69,7 +68,7 @@ Whether those improvements justify losing the orange five is, of course, a matte
 ## Limitations
 
 - Not ball-aware: similar colours in the background, UI, or cloth can shift.
-- Look varies by event and camera; you may need to tweak saturation and selectivity.
+- Look varies by event and camera; you may need to tweak saturation.
 - Requires WebGL; the overlay needs access to the video texture. Works on same-origin streams (WNT TV, Matchroom). On YouTube, the video is served cross-origin and the browser blocks texture access — the extension detects this and stays out of the way.
 - Only helps *viewers* — it does not change what players see at the table.🤷‍♂️
 

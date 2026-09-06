@@ -15,7 +15,7 @@
     </label>
   </header>
 
-  <p class="hint">Master Off bypasses everything. Each remap has its own enable. Higher selectivity = less spill.</p>
+  <p class="hint">Master Off bypasses everything. Each remap has its own enable.</p>
 
   <section id="tableSection">
     <h2>
@@ -42,11 +42,6 @@
       <input type="range" id="orangeSat" min="0.3" max="1" step="0.01" />
       <output id="orangeSatOut"></output>
     </label>
-    <label>
-      Selectivity
-      <input type="range" id="orangeSense" min="0" max="1" step="0.01" />
-      <output id="orangeSenseOut"></output>
-    </label>
   </section>
 
   <section id="pinkSection">
@@ -61,17 +56,12 @@
       <input type="range" id="pinkSat" min="0.2" max="1" step="0.01" />
       <output id="pinkSatOut"></output>
     </label>
-    <label>
-      Selectivity
-      <input type="range" id="pinkSense" min="0" max="1" step="0.01" />
-      <output id="pinkSenseOut"></output>
-    </label>
   </section>
 
   <section id="cyanSection">
     <h2>
       <label class="section-toggle">
-        <input type="checkbox" id="cyanEnabled" />
+        <input type="checkbox" id="cyanEnabled" checked />
         Cyan → blue (2-ball)
       </label>
     </h2>
@@ -79,11 +69,6 @@
       Saturation
       <input type="range" id="cyanSat" min="0.2" max="1" step="0.01" />
       <output id="cyanSatOut"></output>
-    </label>
-    <label>
-      Selectivity
-      <input type="range" id="cyanSense" min="0" max="1" step="0.01" />
-      <output id="cyanSenseOut"></output>
     </label>
   </section>
 
