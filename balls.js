@@ -278,13 +278,26 @@
         oct[k].push(Math.sqrt(dx * dx + dy * dy));
       }
     }
-    let ext = 0;
+    // Per-octant 90th-percentile extent. The MAX over octants used to be the
+    // disk radius outright — but when a neighbouring ball sits adjacent (the
+    // color_fail1 spill), its loose-family pixels push one or two octants
+    // far past the real ball edge, ballooning the remap disk (41 px vs a
+    // 13 px blob). A real ball's octants all end at ~the same distance, so
+    // cap the max at 1.35× the median octant: outliers beyond that are
+    // another ball's pixels, not this ball's far side. When few octants are
+    // populated (fragmented mask), the median is unreliable — fall back to
+    // the plain max.
+    const exts = [];
     for (const arr of oct) {
       if (!arr.length) continue;
       arr.sort((a, b) => a - b);
-      ext = Math.max(ext, arr[Math.min(arr.length - 1, (arr.length * 0.9) | 0)]);
+      exts.push(arr[Math.min(arr.length - 1, (arr.length * 0.9) | 0)]);
     }
-    return ext;
+    if (!exts.length) return 0;
+    if (exts.length < 5) return Math.max(...exts);
+    const sorted = [...exts].sort((a, b) => a - b);
+    const med = sorted[(sorted.length / 2) | 0];
+    return Math.min(Math.max(...exts), med * 1.35);
   }
 
   /** Separable square close (r small — ball fragments, not felt bites):

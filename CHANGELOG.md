@@ -20,8 +20,15 @@ video.
   while the maroon 7 sits at g−b ≈ 35. The absolute gap is wash-invariant
   (same argument as the green-6 guard). Measured: all brown pixels inside
   disks are spared on `table_fail2`/`ref4`, ball remap coverage unchanged
-  (`main_balls2`). Disk-radius tightening (`br` overshoot) remains a
-  possible follow-up.
+  (`main_balls2`).
+- **Remap disk radius capped against neighbouring-ball outliers** (`balls.js`
+  `ballExtent`): the disk radius was the max over angular octants, so a
+  neighbouring ball's pixels pushed 1–2 octants far past the real ball edge
+  and ballooned the disk (41 px vs a 13 px blob on `color_fail1`). The max
+  is now capped at 1.35× the median octant extent (a real ball's octants all
+  end at ~the same distance; fewer than 5 populated octants falls back to
+  the plain max). `color_fail1`'s disk 41→20 px, `table_fail2`'s five
+  37→19 px, genuinely big balls (ref4, all octants agreeing) unaffected.
 
 ## [2.5.0] — 2026-09-06
 

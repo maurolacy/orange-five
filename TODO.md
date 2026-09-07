@@ -13,7 +13,17 @@
 - ~~Ball colour spilling → ball identification~~ **#4 DONE (v2, two-stage)**: stage 1 proposes candidates on the 480-wide mask (classify → close → relaxed gates); stage 2 scores each candidate's disk on the NATIVE-res frame (`detectBallsFull`, crop around the region bbox) — native purity 0.74–0.91 vs 0.56–0.72 at mask res fixed the real orange-5 recall gap on WNT footage (five now 100 % on its segments). Shader remaps gated to each ball's disk; classes without a ball are NOT remapped (no colour-only fallback). **6-as-2 fixed**: the 6's arena green [106,204,177] passed the cyan band; all three layers now require `b ≥ g − 12` (absolute g−b gap, wash-invariant) — see CHANGELOG. Watch live: phantom four on pink set dressing when felt % collapses (<10 % → consider suppressing ball remaps); temporal smoothing beyond the 700 ms disk hold if flicker shows.
 - ~~Use exact target tonalities — official Predator Arcos II colours for 5, 2 and 4~~ **DONE**: hues sampled from the solid balls' lit body in `docs/Predator_Arcos_II.webp`, sat floors treating the reference colours as fully saturated — orange h22°/s0.90, purple h290°/s0.88 (cap 0.92; raw photo read 306° under warm cast — 284–296° both plausible), blue h215°/s0.92 (cap 0.95); see CHANGELOG. **Watch live**: the reference was shot under warm arena light, so hues may sit ~5–10° red of brand-neutral; the 5's sat floor 0.90 tints the white stripes near-full orange inside the disk (by design, whole-ball tone remap).
 - ~~Do the original sliders for intensity and selectivity still make sense? Remove the ones that don't if not.~~ **Done**: intensity stays (saturation slider per remap); selectivity sliders removed — the detection thresholds are now baked-in constants (former defaults), no longer user-tunable (see CHANGELOG).
-- **Remap disk overshoot (color_fail1)**: the stage-2 `br` disk can balloon past the ball onto a neighbouring ball (41 px vs a 13 px blob radius — `ballExtent`'s max-over-octants admits outliers). Mitigated by the shader's brown-spare gate (`g − b > 20` spares the 7 inside any disk; see CHANGELOG Unreleased). Remaining risk: other neighbour colours (dark red 3 has b−g ≥ +20, opposite sign — NOT covered by the brown gate). Candidate fix: cap `br` growth (e.g. reject octant outliers — max must not exceed ~1.4× the median octant extent) or cap at 1.5× the blob-derived `fr`.
+- ~~Remap disk overshoot (color_fail1)~~ **Fixed both layers**: (1) shader brown-spare gate (`g − b > 20` spares the 7 inside any disk — regression-tested in `tests/remap.test.js`); (2) `ballExtent` now caps the max octant extent at 1.35× the median octant (a real ball's octants all end at ~the same distance; a neighbouring ball pushes only 1–2 octants out) — color_fail1's disk 41→20 px, table_fail2's five 37→19 px, big-ball frames (ref4) untouched. Remaining risk: the dark red 3 (b−g ≥ +20, opposite sign to brown) is NOT covered by the spare gate — watch live.
+
+- Colour confusions:
+    - Red is sometimes confused with purple and remapped to orange
+    - Green is sometimes confused with cyan and remapped to blue
+
+- Colour adjustments:
+    2's blue a bit darker
+    4's purple a bit darker / less neon
+    5's orange a bit more vibrant / different from the 7
+
 - Full 10 balls identification: Consider parallel (GPU-based?) version.
 
 ## Video ingest harness (real-footage debugging)
