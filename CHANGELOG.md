@@ -9,6 +9,8 @@ video.
 
 ## [Unreleased]
 
+## [2.5.1] — 2026-09-07
+
 ### Changed
 
 - **Remap target tuning** (the "colour adjustments" TODO): per-target
