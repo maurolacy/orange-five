@@ -32,9 +32,11 @@ console.log('disks:', JSON.stringify({ five: fmt(found.five), four: fmt(found.fo
 // floors treating the reference colours as fully saturated (~0.9). cap
 // mirrors the shader's per-class saturation ceiling.
 const TARGETS = {
-  five: { hue: 22 / 360, satMin: 0.90, boost: 1.7, cap: 1.0, sLo: 0.22, sh: [0.03, 0.45] },
-  four: { hue: 290 / 360, satMin: 0.88, boost: 1.15, cap: 0.92, sLo: 0.35, sh: [0.03, 0.40] },
-  two: { hue: 215 / 360, satMin: 0.92, boost: 1.2, cap: 0.95, sLo: 0.30, sh: [0.03, 0.40] },
+  // hue/sat/cap mirror content.js DEFAULTS + toXxx; `l` is the lightness
+  // scale (v2.6 tuning: brighter orange vs the dark 7, deeper blue/purple).
+  five: { hue: 30 / 360, satMin: 0.95, boost: 1.7, cap: 1.0, sLo: 0.22, sh: [0.03, 0.45], l: 1.06 },
+  four: { hue: 276 / 360, satMin: 0.88, boost: 1.15, cap: 0.82, sLo: 0.35, sh: [0.03, 0.40], l: 0.94 },
+  two: { hue: 215 / 360, satMin: 0.88, boost: 1.2, cap: 0.95, sLo: 0.30, sh: [0.03, 0.40], l: 0.90 },
 };
 
 function smoothstep(a, b, x) {
@@ -89,7 +91,7 @@ function remap(cls, r8, g8, b8) {
   if (felt) return null;
   const shadow = smoothstep(t.sh[0], t.sh[1], l);
   const sat = Math.min(t.cap, Math.max(s * t.boost, t.satMin)) * (t.sLo + (1 - t.sLo) * shadow);
-  return hsl2rgb(t.hue, sat, l); // keepL: exact lightness
+  return hsl2rgb(t.hue, sat, Math.min(1, l * t.l)); // lightness scaled per target
 }
 
 const out = new PNG({ width: NW, height: NH });

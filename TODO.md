@@ -16,13 +16,10 @@
 - ~~Remap disk overshoot (color_fail1)~~ **Fixed both layers**: (1) shader brown-spare gate (`g − b > 20` spares the 7 inside any disk — regression-tested in `tests/remap.test.js`); (2) `ballExtent` now caps the max octant extent at 1.35× the median octant (a real ball's octants all end at ~the same distance; a neighbouring ball pushes only 1–2 octants out) — color_fail1's disk 41→20 px, table_fail2's five 37→19 px, big-ball frames (ref4) untouched. Remaining risk: the dark red 3 (b−g ≥ +20, opposite sign to brown) is NOT covered by the spare gate — watch live.
 
 - Colour confusions:
-    - Red is sometimes confused with purple and remapped to orange
-    - Green is sometimes confused with cyan and remapped to blue
+    - Red is sometimes confused with purple and remapped to orange.
+    - Green is sometimes confused with cyan and remapped to blue.
 
-- Colour adjustments:
-    2's blue a bit darker
-    4's purple a bit darker / less neon
-    5's orange a bit more vibrant / different from the 7
+- ~~Colour adjustments~~ **DONE** (see CHANGELOG Unreleased): per-target lightness scales + retuned hue/sat — 5 orange → hue 30°, sat 0.95, l×1.06 (yellow-amber, brighter than the 7, clear of the red 3 and yellow 1); 4 purple → hue 276° (blue-violet), sat cap 0.82, l×0.94 (less neon, a bit darker); 2 blue → sat 0.88, l×0.90 (a bit darker). Verified body colours on `table_fail2`: five rgb[249,128,7], four rgb[208,152,245], two rgb[150,193,252].
 
 - Full 10 balls identification: Consider parallel (GPU-based?) version.
 

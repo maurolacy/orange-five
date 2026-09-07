@@ -9,6 +9,24 @@ video.
 
 ## [Unreleased]
 
+### Changed
+
+- **Remap target tuning** (the "colour adjustments" TODO): per-target
+  lightness scales added to the whole-ball remap (`u_orangeL/u_pinkL/u_blueL`
+  — the remap otherwise preserves pixel lightness exactly):
+  - **5 orange** → hue 22°→**30°** (yellow-leaning amber: separates from the
+    red 3 ~355° and the maroon 7, keeps a gap to the yellow 1), sat floor
+    0.90→**0.95**, lightness ×**1.06** (brighter than the dark 7).
+  - **4 purple** → hue 290°→**276°** (blue-leaning violet; 290° read too
+    red/magenta on the ball), sat cap 0.92→**0.82**, lightness ×**0.94**
+    (less neon, a bit darker).
+  - **2 blue** → sat floor 0.92→**0.88**, lightness ×**0.90** (a bit
+    darker, clearly distinct from the green 6 / felt).
+  Measured body colours on `table_fail2`: five rgb[249,128,7],
+  four rgb[208,152,245], two rgb[150,193,252]. `harness/preview.js`
+  TARGETS mirror all of it. Note: stored sat-slider values below the new
+  floors persist until a popup **Reset**.
+
 ### Fixed
 
 - **4→purple spill onto the brown 7** (seen on `testdata/color_fail1.png`):

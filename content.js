@@ -28,18 +28,26 @@
     // Sat floors treat the reference colours as FULLY saturated (the promo
     // photo's arena wash only lowered measured HSL sat) — floors sit at
     // ~0.9 so the remapped balls read as vivid as the real balls.
-    orangeHue: 22 / 360,
-    orangeSat: 0.90,
+    // Lightness scales per remap target (v2.6 tuning): the whole-ball remap
+    // otherwise preserves pixel lightness exactly; these scale it so the
+    // remapped balls read darker/brighter as a real ball of the target
+    // colour would under the same light, and to separate look-alikes
+    // (brighter orange vs the dark maroon 7; deeper blue/purple).
+    orangeHue: 30 / 360, // yellow-leaning amber: separates from the red 3 (~355°) and the maroon 7 (~20°), keeps a gap to the yellow 1 (~55–60°)
+    orangeSat: 0.95,
     orangeSatBoost: 1.7,
     orangeLift: 0.06,
+    orangeL: 1.06, // brighter → separates from the dark 7
     mauveSatMin: 0.05,
     mauveSatMax: 0.48,
-    purpleHue: 290 / 360, // raw photo read 306° but under the promo's warm cast; 290° matches the Arcos violet at full sat (284–296° both plausible)
+    purpleHue: 276 / 360, // blue-leaning violet: 290° read too red/magenta on the remapped ball; 276° sits between blue-violet (270°) and the Arcos read, clearly "purple" not "pink"
     pinkSat: 0.88,
     pinkSatBoost: 1.15,
+    pinkL: 0.94, // a bit darker / less neon
     blueHue: 215 / 360,
-    cyanSat: 0.92,
+    cyanSat: 0.88,
     cyanSatBoost: 1.2,
+    blueL: 0.90, // a bit darker
   };
 
   const config = Object.assign({}, DEFAULTS);
@@ -75,9 +83,11 @@
     uniform float u_orangeSat;
     uniform float u_orangeSatBoost;
     uniform float u_orangeLift;
+    uniform float u_orangeL;
     uniform float u_purpleHue;
     uniform float u_pinkSat;
     uniform float u_pinkSatBoost;
+    uniform float u_pinkL;
     uniform float u_mauveSatMin;
     uniform float u_mauveSatMax;
     uniform float u_mauveRatio;
@@ -90,6 +100,7 @@
     uniform float u_blueHue;
     uniform float u_cyanSat;
     uniform float u_cyanSatBoost;
+    uniform float u_blueL;
     uniform float u_cyanSatMin;
     uniform float u_aspect;        // videoWidth / videoHeight
     // Per-ball gating (balls.js classifier). xyz = centre (height-normalised)
@@ -139,19 +150,19 @@
     vec3 toOrange(float s, float l) {
       float shadow = smoothstep(0.03, 0.45, l);
       float sat = min(1.0, max(s * u_orangeSatBoost, u_orangeSat)) * mix(0.22, 1.0, shadow);
-      return hsl2rgb(vec3(u_orangeHue, sat, l));
+      return hsl2rgb(vec3(u_orangeHue, sat, min(1.0, l * u_orangeL)));
     }
 
     vec3 toPurple(float s, float l) {
       float shadow = smoothstep(0.03, 0.40, l);
-      float sat = min(0.92, max(s * u_pinkSatBoost, u_pinkSat)) * mix(0.35, 1.0, shadow);
-      return hsl2rgb(vec3(u_purpleHue, sat, l));
+      float sat = min(0.82, max(s * u_pinkSatBoost, u_pinkSat)) * mix(0.35, 1.0, shadow);
+      return hsl2rgb(vec3(u_purpleHue, sat, min(1.0, l * u_pinkL)));
     }
 
     vec3 toBlue(float s, float l) {
       float shadow = smoothstep(0.03, 0.40, l);
       float sat = min(0.95, max(s * u_cyanSatBoost, u_cyanSat)) * mix(0.30, 1.0, shadow);
-      return hsl2rgb(vec3(u_blueHue, sat, l));
+      return hsl2rgb(vec3(u_blueHue, sat, min(1.0, l * u_blueL)));
     }
 
     void main() {
@@ -419,9 +430,11 @@
       orangeSat: gl.getUniformLocation(prog, 'u_orangeSat'),
       orangeSatBoost: gl.getUniformLocation(prog, 'u_orangeSatBoost'),
       orangeLift: gl.getUniformLocation(prog, 'u_orangeLift'),
+      orangeL: gl.getUniformLocation(prog, 'u_orangeL'),
       purpleHue: gl.getUniformLocation(prog, 'u_purpleHue'),
       pinkSat: gl.getUniformLocation(prog, 'u_pinkSat'),
       pinkSatBoost: gl.getUniformLocation(prog, 'u_pinkSatBoost'),
+      pinkL: gl.getUniformLocation(prog, 'u_pinkL'),
       mauveSatMin: gl.getUniformLocation(prog, 'u_mauveSatMin'),
       mauveSatMax: gl.getUniformLocation(prog, 'u_mauveSatMax'),
       mauveRatio: gl.getUniformLocation(prog, 'u_mauveRatio'),
@@ -434,6 +447,7 @@
       blueHue: gl.getUniformLocation(prog, 'u_blueHue'),
       cyanSat: gl.getUniformLocation(prog, 'u_cyanSat'),
       cyanSatBoost: gl.getUniformLocation(prog, 'u_cyanSatBoost'),
+      blueL: gl.getUniformLocation(prog, 'u_blueL'),
       cyanSatMin: gl.getUniformLocation(prog, 'u_cyanSatMin'),
       hasMask: gl.getUniformLocation(prog, 'u_hasMask'),
       maskOk: gl.getUniformLocation(prog, 'u_maskOk'),
@@ -513,9 +527,11 @@
           gl.uniform1f(locs.orangeSat, config.orangeSat);
           gl.uniform1f(locs.orangeSatBoost, config.orangeSatBoost);
           gl.uniform1f(locs.orangeLift, config.orangeLift);
+          gl.uniform1f(locs.orangeL, config.orangeL);
           gl.uniform1f(locs.purpleHue, config.purpleHue);
           gl.uniform1f(locs.pinkSat, config.pinkSat);
           gl.uniform1f(locs.pinkSatBoost, config.pinkSatBoost);
+          gl.uniform1f(locs.pinkL, config.pinkL);
           gl.uniform1f(locs.mauveSatMin, config.mauveSatMin);
           gl.uniform1f(locs.mauveSatMax, config.mauveSatMax);
           gl.uniform1f(locs.mauveRatio, MAUVE_RATIO);
@@ -528,6 +544,7 @@
           gl.uniform1f(locs.blueHue, config.blueHue);
           gl.uniform1f(locs.cyanSat, config.cyanSat);
           gl.uniform1f(locs.cyanSatBoost, config.cyanSatBoost);
+          gl.uniform1f(locs.blueL, config.blueL);
           gl.uniform1f(locs.cyanSatMin, CYAN_SAT_MIN);
           gl.uniform1f(locs.debugMask, config.tableDebug ? 1.0 : 0.0);
           gl.uniform1f(locs.aspect,
