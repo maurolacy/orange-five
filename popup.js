@@ -2,10 +2,11 @@ const DEFAULTS = {
   enabled: true,
   orangeEnabled: true,
   pinkEnabled: true,
-  cyanEnabled: false,
+  cyanEnabled: true,
   tableEnabled: true,
   tableDebug: false,
-  orangeSat: 0.90,
+  orangeSat: 0.78, // a bit under the 0.95 shader floor: the slider max() only
+                   // matters for user-chosen values below the floor
   pinkSat: 0.88,
   cyanSat: 0.92,
 };
