@@ -85,6 +85,7 @@ Started on August 29, 2026, out of frustration with the purple 5-ball during the
 - **Google AI (likely Gemini and/or Claude)** — Historical research and original discussion.
 - **Cursor Auto (Grok?)** — Development, colour science, debugging.
 - **Claude Opus 4.6** — Development, colour science, README prose, debugging.
+- **GLM-5.3-flash** — Development, colour science, debugging.
 - **Mauro Lacy** — Idea, pair programming, testing and reporting, pool-watching.
 
 ## License
