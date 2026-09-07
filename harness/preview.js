@@ -80,6 +80,9 @@ function remap(cls, r8, g8, b8) {
   const mx = Math.max(r8, g8, b8), mn = Math.min(r8, g8, b8);
   const chroma = (mx - mn) / 255;
   if (l > 0.94 || chroma < 0.06) return null;
+  // Brown spare (shader-mirrored): maroon 7 g−b ≈ 35/255 vs the balls'
+  // G ≈ B — spare yellow-brown pixels inside the disk (disk overshoot).
+  if (g8 > b8 + 20) return null;
   let felt = g8 > r8 + 3 && b8 > r8; // blue-grey felt
   if (cls === 'five') felt = g8 > r8 + 5 && b8 > r8; // mauve's G≈R dark shades
   if (cls === 'two') felt = felt && (b8 - g8) < 25 && chroma < 0.176;

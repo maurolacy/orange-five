@@ -9,6 +9,20 @@ video.
 
 ## [Unreleased]
 
+### Fixed
+
+- **4→purple spill onto the brown 7** (seen on `testdata/color_fail1.png`):
+  the whole-ball remap disk can overshoot onto a neighbouring ball, and the
+  in-disk remap was colour-blind — it repainted every non-felt pixel,
+  including the 7's brown. The shader and the `harness/preview.js` CPU
+  replica now spare yellow-brown pixels (`g − b > 20`) inside all remap
+  disks: the 4's salmon keeps |b−g| ≤ 18 and the 5's rose keeps B ≥ G−6,
+  while the maroon 7 sits at g−b ≈ 35. The absolute gap is wash-invariant
+  (same argument as the green-6 guard). Measured: all brown pixels inside
+  disks are spared on `table_fail2`/`ref4`, ball remap coverage unchanged
+  (`main_balls2`). Disk-radius tightening (`br` overshoot) remains a
+  possible follow-up.
+
 ## [2.5.0] — 2026-09-06
 
 ### Removed

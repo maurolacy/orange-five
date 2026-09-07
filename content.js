@@ -247,11 +247,20 @@
         // Mauve's darkest bottom shades are blue-dominant with G ≈ R
         // (G−R ≈ 4/255) — only felt at G−R ≥ 5 is excluded (lit felt sits
         // at G−R ≥ 6 even shadowed).
-        if (!(l > 0.94 || chroma < 0.06 || (c.g > c.r + 0.02 && c.b > c.r))) {
+        // Brown spare (g − b > 20): the maroon 7 [138,84,49] leans
+        // yellow-brown (g−b ≈ 35) while the 5's rose keeps B ≥ G−6 —
+        // protects the 7 when an oversized remap disk reaches it.
+        if (!(l > 0.94 || chroma < 0.06 || (c.g > c.r + 0.02 && c.b > c.r) ||
+            c.g > c.b + 0.078)) {
           outc = toOrange(s, l);
         }
       } else if (u_pinkEnabled > 0.5 && inFour) {
-        if (!(l > 0.94 || chroma < 0.06 || (c.g > c.r + 0.012 && c.b > c.r))) {
+        // Brown spare (g − b > 20): the salmon 4 keeps |b − g| ≤ 18 (its
+        // rose has G ≈ B) while the brown 7 reads g−b ≈ 35 — the absolute
+        // gap is wash-invariant (glare adds equally to G and B). Spares
+        // the 7 / dark reds when the remap disk overshoots onto them.
+        if (!(l > 0.94 || chroma < 0.06 || (c.g > c.r + 0.012 && c.b > c.r) ||
+            c.g > c.b + 0.078)) {
           outc = toPurple(s, l);
         }
       } else if (u_cyanEnabled > 0.5 && inTwo) {
