@@ -9,6 +9,20 @@ video.
 
 ## [Unreleased]
 
+### Wontfix (by design)
+
+- **Green 6 ↔ cyan 2 confusion left as-is** (investigated 2026-09-07,
+  evidence in `testdata/color_fail2*.png` + `-original`): the 6's
+  glare-washed tones (g−b ≈ +10) sit inside every cyan gate budget that
+  also covers the real 2's washed tones (g−b −9…−2), and the 2's bright
+  washed body is colour-identical to the arena felt (chroma 15–23 vs
+  14–18, B−G 6–12 vs 10–12) — no pixel test separates them. Experiments
+  (tightening all cyan g−b gates to −4; dropping the in-disk felt clause)
+  were REVERTED: they either spilled blue onto the cloth inside the remap
+  disk or still spilled onto the adjacent 6. **Decision: prefer zero cloth
+  spill over perfect ball coverage** — see TODO.md for the full analysis
+  and future angles (temporal/geometry, not looser colour gates).
+
 ## [2.5.1] — 2026-09-07
 
 ### Changed

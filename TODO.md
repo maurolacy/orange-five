@@ -18,6 +18,21 @@
 - Colour confusions:
     - Red is sometimes confused with purple and remapped to orange.
     - Green is sometimes confused with cyan and remapped to blue.
+      **Investigated & deliberately left as-is** (2026-09-07; evidence in
+      `testdata/color_fail2*.png` + `-original`): the 6's glare-washed
+      highlight [143,198,188] (g−b ≈ 10) and dark side (g−b +5…+20 at mid
+      chroma) sit inside every gate budget that also covers the real 2's
+      washed tones (g−b −9…−2), and the 2's bright washed body (chroma
+      15–23, B−G 6–12) is colour-IDENTICAL to this arena's felt (chroma
+      14–18, B−G 10–12) — no pixel test separates them. Tried and REVERTED:
+      (a) tightening all cyan g−b gates −12 → −4 (kills the 6's slot win but
+      the remap disk still spills onto the adjacent 6's dark side); (b)
+      dropping the in-disk felt clause / generic chroma floor (remaps the
+      washed 2 fully but tints the cloth inside the disk). **Decision:
+      prefer zero cloth spill over perfect ball coverage** — a green 2
+      occasionally staying green (or a 6 winning the slot) is acceptable; a
+      blue-tinted table is not. Future angle if revisited: temporal
+      confirmation or a shape/geometry prior, not looser colour gates.
 
 - ~~Colour adjustments~~ **DONE** (see CHANGELOG Unreleased): per-target lightness scales + retuned hue/sat — 5 orange → hue 30°, sat 0.95, l×1.06 (yellow-amber, brighter than the 7, clear of the red 3 and yellow 1); 4 purple → hue 276° (blue-violet), sat cap 0.82, l×0.94 (less neon, a bit darker); 2 blue → sat 0.88, l×0.90 (a bit darker). Verified body colours on `table_fail2`: five rgb[249,128,7], four rgb[208,152,245], two rgb[150,193,252].
 
