@@ -9,6 +9,8 @@ video.
 
 ## [Unreleased]
 
+## [2.6.0] — 2026-09-11
+
 ### Changed
 
 - **Shared single source of truth** (`shared.js`): DEFAULTS, POPUP_DEFAULTS,
