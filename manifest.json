@@ -32,6 +32,7 @@
         "*://matchroompool.com/*"
       ],
       "js": [
+        "shared.js",
         "balls.js",
         "table.js",
         "content.js"

@@ -1,15 +1,7 @@
-const DEFAULTS = {
-  enabled: true,
-  orangeEnabled: true,
-  pinkEnabled: true,
-  cyanEnabled: true,
-  tableEnabled: true,
-  tableDebug: false,
-  orangeSat: 0.78, // a bit under the 0.95 shader floor: the slider max() only
-                   // matters for user-chosen values below the floor
-  pinkSat: 0.88,
-  cyanSat: 0.92,
-};
+// Single source of truth (shared.js, loaded before this script): the popup
+// defaults are the POPUP_DEFAULTS subset of the full content-script DEFAULTS.
+const DEFAULTS = window.__orangeFiveShared.POPUP_DEFAULTS;
+
 
 // The "Selectivity" sliders are gone; drop their stale stored values so they
 // can't linger in chrome.storage.sync.

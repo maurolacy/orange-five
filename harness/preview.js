@@ -1,5 +1,5 @@
 // CPU preview of the extension's whole-ball remap — mirrors the fragment
-// shader in content.js 1:1 (verified-ball disks from balls.js, whole-disk
+// shader in shared.js 1:1 (verified-ball disks from balls.js, whole-disk
 // remap with exact-lightness transforms). Lets us validate the remap look
 // on real frames without loading the extension.
 //
@@ -8,6 +8,7 @@ const fs = require('fs');
 const { PNG } = require('pngjs');
 const table = require('../table.js');
 const balls = require('../balls.js');
+const { TARGETS } = require('../shared.js');
 const { downscaleRgba } = require('../tests/helpers');
 
 const [, , inFile, outFile] = process.argv;
@@ -26,18 +27,6 @@ const res = table.analyseData(d.data, d.w, d.h, 32);
 const found = balls.detectBallsFull(d.data, res, native, NW, NH, NW / d.w, NH / d.h);
 const fmt = (b) => b && { cx: +b.cx.toFixed(1), cy: +b.cy.toFixed(1), r: +b.r.toFixed(1), br: b.br && +b.br.toFixed(1), p: +b.purity.toFixed(2) };
 console.log('disks:', JSON.stringify({ five: fmt(found.five), four: fmt(found.four), two: fmt(found.two) }));
-
-// DEFAULTS from content.js — targets sampled from the official Predator
-// Arcos II rack (docs/Predator_Arcos_II.webp), hues from the lit body, sat
-// floors treating the reference colours as fully saturated (~0.9). cap
-// mirrors the shader's per-class saturation ceiling.
-const TARGETS = {
-  // hue/sat/cap mirror content.js DEFAULTS + toXxx; `l` is the lightness
-  // scale (v2.6 tuning: brighter orange vs the dark 7, deeper blue/purple).
-  five: { hue: 30 / 360, satMin: 0.95, boost: 1.7, cap: 1.0, sLo: 0.22, sh: [0.03, 0.45], l: 1.06 },
-  four: { hue: 276 / 360, satMin: 0.88, boost: 1.15, cap: 0.82, sLo: 0.35, sh: [0.03, 0.40], l: 0.94 },
-  two: { hue: 215 / 360, satMin: 0.88, boost: 1.2, cap: 0.95, sLo: 0.30, sh: [0.03, 0.40], l: 0.90 },
-};
 
 function smoothstep(a, b, x) {
   const t = Math.min(1, Math.max(0, (x - a) / (b - a)));

@@ -9,6 +9,14 @@ video.
 
 ## [Unreleased]
 
+### Changed
+
+- **Shared single source of truth** (`shared.js`): DEFAULTS, POPUP_DEFAULTS,
+  DETECT thresholds, VERT/FRAG shader, and Arcos TARGETS live in one module
+  consumed by the content script, popup, `harness/preview.js`, and
+  `harness/ext-test.html` (no more duplicated defaults / regex-extracted
+  shaders). Guarded by `tests/shared.test.js`.
+
 ## [2.5.2] — 2026-09-11
 
 ### Fixed
