@@ -9,6 +9,8 @@ video.
 
 ## [Unreleased]
 
+## [2.5.2] — 2026-09-11
+
 ### Fixed
 
 - Stop injecting on YouTube (and the rest of the web): content-script
