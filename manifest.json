@@ -24,7 +24,12 @@
   "content_scripts": [
     {
       "matches": [
-        "<all_urls>"
+        "*://*.wnttv.com/*",
+        "*://wnttv.com/*",
+        "*://*.matchroom.com/*",
+        "*://matchroom.com/*",
+        "*://*.matchroompool.com/*",
+        "*://matchroompool.com/*"
       ],
       "js": [
         "balls.js",

@@ -57,7 +57,7 @@ Open the extension popup:
 
 Toggle **On** off anytime to compare with the original stream colours.
 
-Active on pages whose host contains `wnttv`, `youtube`, or `matchroom`.
+Active on `wnttv` and `matchroom` hosts (see `manifest.json`). Not injected on YouTube.
 
 ## Background
 
@@ -69,7 +69,7 @@ Whether those improvements justify losing the orange five is, of course, a matte
 
 - Not ball-aware: similar colours in the background, UI, or cloth can shift.
 - Look varies by event and camera; you may need to tweak saturation.
-- Requires WebGL; the overlay needs access to the video texture. Works on same-origin streams (WNT TV, Matchroom). On YouTube, the video is served cross-origin and the browser blocks texture access — the extension detects this and stays out of the way.
+- Requires WebGL; the overlay needs access to the video texture. Works on same-origin streams (WNT TV, Matchroom). YouTube is not supported.
 - Only helps *viewers* — it does not change what players see at the table.🤷‍♂️
 
 ## Privacy

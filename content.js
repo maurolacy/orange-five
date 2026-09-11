@@ -11,7 +11,7 @@
   'use strict';
 
   const currentHost = window.location.hostname;
-  if (!currentHost.includes('wnttv') && !currentHost.includes('youtube') && !currentHost.includes('matchroom')) {
+  if (!currentHost.includes('wnttv') && !currentHost.includes('matchroom')) {
     return;
   }
 
