@@ -9,6 +9,12 @@ video.
 
 ## [Unreleased]
 
+### Fixed
+
+- Stop injecting on YouTube (and the rest of the web): content-script
+  `matches` narrowed to `wnttv` / `matchroom` hosts. An overlay on YouTube
+  knocked the player out of its hardware video path (black / soft stream).
+
 ### Wontfix (by design)
 
 - **Green 6 ↔ cyan 2 confusion left as-is** (investigated 2026-09-07,
